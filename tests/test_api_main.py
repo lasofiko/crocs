@@ -26,7 +26,9 @@ def test_health_reports_redis_not_configured(client: TestClient) -> None:
     assert body["preload_raw_bundle"] is False
 
 
-def test_incremental_schedule_returns_501(client: TestClient) -> None:
+def test_schedule_runs_latest_404_when_db_missing(client: TestClient) -> None:
+    r = client.get("/api/v1/schedule-runs/latest")
+    assert r.status_code == 404
     r = client.patch("/api/v1/schedule/incremental")
     assert r.status_code == 501
 

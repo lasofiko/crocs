@@ -182,7 +182,12 @@ def run_pipeline(
             restaurant_close_hour=settings.forecast.close_hour,
         )
         dbp = rt.schedule_db_path
-        if dbp is not None:
+        if dbp is None:
+            _stage(
+                "Кэш расписания: runtime.schedule_db_path не задан — SQLite-кэш недоступен, "
+                "после каждого успешного расчёта прогон в БД не сохранится (если не задать путь).",
+            )
+        else:
             cache_key = compute_schedule_cache_key(
                 forecast_digest=digest_fc,
                 demand_df=demand_df,
@@ -192,6 +197,9 @@ def run_pipeline(
                 restaurant_close_hour=settings.forecast.close_hour,
             )
             if sch.schedule_cache_from_db:
+                _stage(
+                    f"Кэш расписания: проверка SQLite ({dbp.resolve()}) по ключам совпадения входов…",
+                )
                 hit = try_load_cached_schedule(
                     dbp,
                     cache_key,
@@ -206,7 +214,7 @@ def run_pipeline(
                     schedule_from_db = True
                     kind_ru = "точное совпадение ключа" if hit.match_kind == "exact" else "совпадение входов (другой сценарий солвера)"
                     _stage(
-                        f"Кэш SQLite: загружено из БД (run_id={rid}, {kind_ru}), CP-SAT/LNS пропускаются.",
+                        f"Кэш SQLite: загружено из БД (run_id={rid}, {kind_ru}) — CP-SAT/LNS не запускаются.",
                     )
                     if hit.match_kind == "exact":
                         warnings.append(
@@ -237,6 +245,11 @@ def run_pipeline(
                             "(inputs_fingerprint): изменились прогноз, сырьё, спрос, структурные ограничения scheduling "
                             "или часы ресторана; либо в SQLite ещё не было успешного сохранения.",
                         )
+            else:
+                _stage(
+                    "Кэш расписания: в конфиге schedule_cache_from_db=false — загрузка из БД отключена, "
+                    "будет полный CP-SAT (после расчёта прогон всё равно может сохраниться в SQLite).",
+                )
 
         if not schedule_from_db:
             _stage("Расписание (CP-SAT + LNS): подбор смен, может занять минуты...")

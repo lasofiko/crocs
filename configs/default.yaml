@@ -29,7 +29,7 @@ forecast:
 
 scheduling:
   enabled: true
-  solver_time_limit_seconds: 1800
+  solver_time_limit_seconds: 3600
   cp_sat_stop_after_first_solution: true
   max_extra_coverage: 2
   min_employees_per_station: 1

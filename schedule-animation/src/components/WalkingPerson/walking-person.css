@@ -1,0 +1,462 @@
+.walking-person {
+    position: absolute;
+    z-index: 22;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 56px;
+    margin-left: -28px;
+    margin-top: -90px;
+    pointer-events: none;
+    will-change: transform, left, top;
+    filter: drop-shadow(0 4px 8px rgb(120 80 60 / 12%));
+}
+
+.walking-person__figure {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.walking-person__id {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 3;
+    max-width: 78px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-size: 0.58rem;
+    font-weight: 800;
+    font-family: ui-monospace, 'Cascadia Code', monospace;
+    letter-spacing: 0.04em;
+    color: #4a3528;
+    background: linear-gradient(180deg, rgb(255 255 255 / 99%) 0%, rgb(255 250 245 / 97%) 100%);
+    box-shadow:
+        0 1px 0 rgb(255 255 255 / 95%),
+        0 2px 6px rgb(80 50 40 / 8%);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.walking-person__head {
+    position: relative;
+    width: 30px;
+    height: 28px;
+    border-radius: 50% 50% 46% 46%;
+    flex-shrink: 0;
+    background: radial-gradient(ellipse 90% 88% at 42% 34%, #fff8f4 0%, #ffe4d6 35%, #ffd0c0 70%, #f5c4b0 100%);
+    box-shadow:
+        inset 0 -6px 12px rgb(220 130 100 / 16%),
+        inset 0 5px 10px rgb(255 255 255 / 72%),
+        0 0 0 1px rgb(255 255 255 / 55%),
+        0 3px 6px rgb(180 100 80 / 10%);
+}
+
+/* Объёмная «чиби»-причёска: мягкий блик, чёлка, боковые пряди */
+.walking-person__hair {
+    position: absolute;
+    left: 50%;
+    top: -10px;
+    z-index: 4;
+    width: 31px;
+    height: 16px;
+    margin-left: -15.5px;
+    border-radius: 52% 52% 38% 38%;
+    pointer-events: none;
+    background:
+        radial-gradient(ellipse 95% 65% at 48% 18%, rgb(255 255 255 / 52%) 0%, transparent 52%),
+        linear-gradient(168deg, #e2c9a8 0%, #c4a384 32%, #9d7658 72%, #7e5c44 100%);
+    box-shadow:
+        inset 0 5px 9px rgb(255 255 255 / 38%),
+        inset 0 -4px 10px rgb(55 38 28 / 16%),
+        0 3px 7px rgb(80 55 40 / 20%);
+    transform-origin: 50% 100%;
+}
+
+.walking-person__hair::before {
+    content: '';
+    position: absolute;
+    left: -7px;
+    top: 8px;
+    width: 12px;
+    height: 19px;
+    border-radius: 58% 42% 52% 48%;
+    background: linear-gradient(195deg, #d2b490 0%, #a88262 48%, #7a5a42 100%);
+    box-shadow:
+        inset 3px 0 5px rgb(255 255 255 / 18%),
+        2px 3px 5px rgb(50 35 25 / 14%);
+    transform: rotate(-8deg);
+}
+
+.walking-person__hair::after {
+    content: '';
+    position: absolute;
+    right: -7px;
+    top: 8px;
+    width: 12px;
+    height: 19px;
+    border-radius: 42% 58% 48% 52%;
+    background: linear-gradient(165deg, #d2b490 0%, #a88262 48%, #7a5a42 100%);
+    box-shadow:
+        inset -3px 0 5px rgb(255 255 255 / 16%),
+        -2px 3px 5px rgb(50 35 25 / 14%);
+    transform: rotate(8deg);
+}
+
+.walking-person__blush {
+    position: absolute;
+    top: 15px;
+    width: 8px;
+    height: 4px;
+    border-radius: 50%;
+    background: rgb(255 150 165 / 42%);
+    pointer-events: none;
+}
+
+.walking-person__blush--l {
+    left: 1px;
+}
+
+.walking-person__blush--r {
+    right: 1px;
+}
+
+.walking-person__eye {
+    position: absolute;
+    top: 12px;
+    width: 6px;
+    height: 7px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 28%, #6a5a52 0%, #3d3028 70%);
+    box-shadow: inset 0 -1px 1px rgb(0 0 0 / 12%);
+    overflow: visible;
+}
+
+.walking-person__eye--l {
+    left: 6px;
+}
+
+.walking-person__eye--r {
+    right: 6px;
+}
+
+.walking-person__eye-shine {
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 2.5px;
+    height: 2.5px;
+    border-radius: 50%;
+    background: rgb(255 255 255 / 95%);
+    box-shadow: 0 0 3px rgb(255 255 255 / 90%);
+}
+
+.walking-person__smile {
+    position: absolute;
+    left: 50%;
+    bottom: 5px;
+    width: 12px;
+    height: 7px;
+    margin-left: -6px;
+    border-radius: 0 0 14px 14px;
+    border: 2px solid transparent;
+    border-bottom-color: rgb(210 120 105 / 42%);
+    border-top: none;
+    box-sizing: border-box;
+}
+
+.walking-person__torso {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    width: 100%;
+    min-height: 32px;
+    margin-top: 2px;
+}
+
+.walking-person__body {
+    position: relative;
+    z-index: 1;
+    width: 22px;
+    height: 26px;
+    margin-top: 0;
+    border-radius: 13px 13px 11px 11px;
+    flex-shrink: 0;
+    background: linear-gradient(
+        180deg,
+        rgb(255 255 255 / 58%) 0%,
+        var(--walk-shirt, #8ec5f0) 32%,
+        var(--walk-shirt, #8ec5f0) 100%
+    );
+    box-shadow:
+        inset 0 4px 0 rgb(255 255 255 / 48%),
+        inset 0 -4px 6px rgb(0 0 0 / 5%);
+}
+
+.walking-person__arm {
+    position: absolute;
+    top: 5px;
+    width: 7px;
+    height: 18px;
+    border-radius: 6px;
+    transform-origin: top center;
+    background: linear-gradient(180deg, #ffe8dc 0%, #ffd4c4 100%);
+    box-shadow: inset 0 2px 0 rgb(255 255 255 / 5%);
+}
+
+.walking-person__arm::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 50%;
+    width: 8px;
+    height: 6px;
+    margin-left: -4px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 30%, #ffe0d4 0%, #ffcbb8 100%);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
+}
+
+.walking-person__arm--left {
+    left: calc(50% - 20px);
+    transform: rotate(20deg);
+}
+
+.walking-person__arm--right {
+    right: calc(50% - 20px);
+    transform: rotate(-20deg);
+}
+
+.walking-person__legs {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    width: 32px;
+    height: 22px;
+    margin: 0 auto;
+}
+
+.walking-person__leg {
+    position: absolute;
+    top: 0;
+    width: 9px;
+    height: 19px;
+    border-radius: 6px;
+    transform-origin: top center;
+    background: linear-gradient(180deg, #c8d6f0 0%, #9eb6e0 50%, #889ec8 100%);
+    box-shadow: inset 0 3px 0 rgb(255 255 255 / 38%);
+}
+
+.walking-person__leg::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: -1px;
+    right: -1px;
+    height: 6px;
+    border-radius: 50%;
+    background: linear-gradient(180deg, #fffefd 0%, #f5ebe4 100%);
+    box-shadow: 0 2px 3px rgb(0 0 0 / 8%);
+}
+
+.walking-person__leg--left {
+    left: 1px;
+}
+
+.walking-person__leg--right {
+    right: 1px;
+}
+
+.walking-person--walking .walking-person__leg--left {
+    animation: walking-person-leg 0.4s ease-in-out infinite alternate;
+}
+
+.walking-person--walking .walking-person__leg--right {
+    animation: walking-person-leg 0.4s ease-in-out infinite alternate-reverse;
+}
+
+.walking-person--walking .walking-person__arm--left {
+    animation: walking-person-arm-l 0.4s ease-in-out infinite alternate;
+}
+
+.walking-person--walking .walking-person__arm--right {
+    animation: walking-person-arm-r 0.4s ease-in-out infinite alternate;
+}
+
+.walking-person--walking .walking-person__figure {
+    animation: walking-person-bob 0.65s ease-in-out infinite;
+}
+
+/* На смене: лёгкий «танец» — покач, руки, ноги */
+.walking-person--idle .walking-person__figure {
+    animation: walking-person-dance 1.15s cubic-bezier(0.42, 0, 0.58, 1) infinite;
+    animation-delay: var(--dance-delay, 0s);
+    transform-origin: 50% 92%;
+}
+
+.walking-person--idle .walking-person__head {
+    animation: walking-person-dance-head 1.15s ease-in-out infinite;
+    animation-delay: var(--dance-delay, 0s);
+}
+
+.walking-person--idle .walking-person__hair {
+    animation: walking-person-hair-sway 1.15s ease-in-out infinite;
+    animation-delay: var(--dance-delay, 0s);
+}
+
+.walking-person--idle .walking-person__arm--left {
+    animation: walking-person-dance-arm-l 0.58s ease-in-out infinite alternate;
+    animation-delay: var(--dance-delay, 0s);
+}
+
+.walking-person--idle .walking-person__arm--right {
+    animation: walking-person-dance-arm-r 0.58s ease-in-out infinite alternate;
+    animation-delay: calc(var(--dance-delay, 0s) + 0.14s);
+}
+
+.walking-person--idle .walking-person__leg--left {
+    animation: walking-person-dance-leg 0.52s ease-in-out infinite alternate;
+    animation-delay: calc(var(--dance-delay, 0s) + 0.06s);
+}
+
+.walking-person--idle .walking-person__leg--right {
+    animation: walking-person-dance-leg 0.52s ease-in-out infinite alternate-reverse;
+    animation-delay: calc(var(--dance-delay, 0s) + 0.12s);
+}
+
+@keyframes walking-person-dance {
+    0%,
+    100% {
+        transform: translateY(0) rotate(0deg) scale(1);
+    }
+
+    18% {
+        transform: translateY(-4px) rotate(-5deg) scale(1.02);
+    }
+
+    36% {
+        transform: translateY(-1px) rotate(5deg) scale(1);
+    }
+
+    52% {
+        transform: translateY(-5px) rotate(-3deg) scale(1.03);
+    }
+
+    70% {
+        transform: translateY(-2px) rotate(4deg) scale(1.01);
+    }
+
+    86% {
+        transform: translateY(-3px) rotate(-2deg) scale(1.02);
+    }
+}
+
+@keyframes walking-person-dance-head {
+    0%,
+    100% {
+        transform: rotate(0deg);
+    }
+
+    25% {
+        transform: rotate(-4deg);
+    }
+
+    55% {
+        transform: rotate(5deg);
+    }
+
+    80% {
+        transform: rotate(-2deg);
+    }
+}
+
+@keyframes walking-person-hair-sway {
+    0%,
+    100% {
+        transform: rotate(0deg);
+    }
+
+    40% {
+        transform: rotate(-2.5deg);
+    }
+
+    72% {
+        transform: rotate(2deg);
+    }
+}
+
+@keyframes walking-person-dance-arm-l {
+    from {
+        transform: rotate(8deg) translateY(0);
+    }
+
+    to {
+        transform: rotate(46deg) translateY(-3px);
+    }
+}
+
+@keyframes walking-person-dance-arm-r {
+    from {
+        transform: rotate(-8deg) translateY(0);
+    }
+
+    to {
+        transform: rotate(-48deg) translateY(-3px);
+    }
+}
+
+@keyframes walking-person-dance-leg {
+    from {
+        transform: rotate(-5deg) translateY(0);
+    }
+
+    to {
+        transform: rotate(10deg) translateY(-4px);
+    }
+}
+
+@keyframes walking-person-leg {
+    from {
+        transform: rotate(-10deg);
+    }
+
+    to {
+        transform: rotate(10deg);
+    }
+}
+
+@keyframes walking-person-arm-l {
+    from {
+        transform: rotate(16deg);
+    }
+
+    to {
+        transform: rotate(26deg);
+    }
+}
+
+@keyframes walking-person-arm-r {
+    from {
+        transform: rotate(-16deg);
+    }
+
+    to {
+        transform: rotate(-26deg);
+    }
+}
+
+@keyframes walking-person-bob {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-2px);
+    }
+}

@@ -1,0 +1,15 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800&display=swap');
+
+html,
+body,
+#root {
+    min-height: 100%;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: Nunito, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    color: #3d2e24;
+    background-color: #faf3e6;
+}

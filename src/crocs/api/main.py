@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import threading
 import uuid
@@ -14,17 +13,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from crocs.config import GuestsSource, load_settings
+from crocs.io.json_records import dataframe_to_json_records
+from crocs.io.schedule_db import load_schedule_run_payload
 from crocs.services.pipeline_service import run_pipeline
 
 JobStatus = Literal["pending", "running", "done", "error"]
 
 
-def _dataframe_json_records(df: pd.DataFrame | None) -> list[dict[str, Any]]:
-    """Сериализация таблицы для JSON (даты ISO, NaN → null)."""
-    if df is None or df.empty:
-        return []
-    blob = df.to_json(orient="records", date_format="iso")
-    return json.loads(blob)
+class ScheduleRunFromDbResponse(BaseModel):
+    """Прогон из SQLite для фронта (без повторного CP-SAT)."""
+
+    run_id: int
+    created_at: str | None = None
+    forecast_digest: str | None = None
+    cache_key: str | None = None
+    inputs_fingerprint: str | None = None
+    meta: dict[str, Any] = Field(default_factory=dict)
+    schedule_rows: list[dict[str, Any]] = Field(default_factory=list)
+    labor_demand_rows: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ForecastPipelineResponse(BaseModel):
@@ -138,9 +144,9 @@ def _run_pipeline_job(
         )
         sched_n = len(result.schedule) if result.schedule is not None else None
         ld_n = len(result.labor_demand) if result.labor_demand is not None else None
-        forecast_rows = _dataframe_json_records(result.forecast)
-        schedule_rows = _dataframe_json_records(result.schedule)
-        labor_demand_rows = _dataframe_json_records(result.labor_demand)
+        forecast_rows = dataframe_to_json_records(result.forecast)
+        schedule_rows = dataframe_to_json_records(result.schedule)
+        labor_demand_rows = dataframe_to_json_records(result.labor_demand)
         with _job_lock:
             _jobs[job_id]["status"] = "done"
             _jobs[job_id]["warnings"] = list(result.warnings)
@@ -201,6 +207,52 @@ def _relative_path(s: str) -> Path:
     return _resolve_cwd_path(s)
 
 
+def _schedule_db_path_from_request(request: Request) -> Path:
+    settings = getattr(request.app.state, "settings", None)
+    if settings is None:
+        settings = load_settings(_config_path_from_env())
+        request.app.state.settings = settings
+    raw = settings.runtime.schedule_db_path
+    if raw is None:
+        raise HTTPException(
+            status_code=404,
+            detail="В YAML не задан runtime.schedule_db_path — некуда читать кэш расписания.",
+        )
+    p = Path(raw)
+    if not p.is_absolute():
+        p = (Path.cwd() / p).resolve()
+    else:
+        p = p.resolve()
+    if not p.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Файл SQLite не найден: {p}. Сначала выполните успешный прогон пайплайна.",
+        )
+    return p
+
+
+def _schedule_run_json_from_db(request: Request, *, run_id: int | None) -> ScheduleRunFromDbResponse:
+    dbp = _schedule_db_path_from_request(request)
+    payload = load_schedule_run_payload(dbp, run_id=run_id)
+    if payload is None:
+        raise HTTPException(
+            status_code=404,
+            detail="В БД нет сохранённого прогона с сменами (или указан несуществующий run_id).",
+        )
+    return ScheduleRunFromDbResponse(
+        run_id=int(payload["run_id"]),
+        created_at=str(payload["created_at"]) if payload.get("created_at") is not None else None,
+        forecast_digest=str(payload["forecast_digest"]) if payload.get("forecast_digest") is not None else None,
+        cache_key=str(payload["cache_key"]) if payload.get("cache_key") is not None else None,
+        inputs_fingerprint=str(payload["inputs_fingerprint"])
+        if payload.get("inputs_fingerprint") is not None
+        else None,
+        meta=dict(payload.get("meta") or {}),
+        schedule_rows=dataframe_to_json_records(payload["schedule_df"]),
+        labor_demand_rows=dataframe_to_json_records(payload["labor_df"]),
+    )
+
+
 @app.get("/health")
 def health(request: Request) -> dict[str, object]:
     st = request.app.state
@@ -255,10 +307,22 @@ def forecast_pipeline(
 
     return ForecastPipelineResponse(
         warnings=result.warnings,
-        forecast_rows=_dataframe_json_records(result.forecast),
-        schedule_rows=_dataframe_json_records(result.schedule),
-        labor_demand_rows=_dataframe_json_records(result.labor_demand),
+        forecast_rows=dataframe_to_json_records(result.forecast),
+        schedule_rows=dataframe_to_json_records(result.schedule),
+        labor_demand_rows=dataframe_to_json_records(result.labor_demand),
     )
+
+
+@app.get("/api/v1/schedule-runs/latest", response_model=ScheduleRunFromDbResponse)
+def schedule_run_latest_from_db(request: Request) -> ScheduleRunFromDbResponse:
+    """Последний сохранённый прогон из SQLite: смены и labor demand в JSON для фронта."""
+    return _schedule_run_json_from_db(request, run_id=None)
+
+
+@app.get("/api/v1/schedule-runs/{run_id}", response_model=ScheduleRunFromDbResponse)
+def schedule_run_by_id_from_db(request: Request, run_id: int) -> ScheduleRunFromDbResponse:
+    """Прогон по ``run_id`` из SQLite (таблица ``schedule_runs``)."""
+    return _schedule_run_json_from_db(request, run_id=run_id)
 
 
 @app.post("/api/v1/pipeline/jobs", response_model=PipelineJobAccepted, status_code=202)

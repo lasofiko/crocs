@@ -324,10 +324,19 @@ def _raise_schedule_error(status: int, inputs: SchedulingInputs, limit_note: flo
         )
         hint = " " + " ".join(parts)
     elif status == cp_model.UNKNOWN:
-        hint = (
-            " Решатель не успел за лимит времени: увеличьте scheduling.solver_time_limit_seconds "
-            f"(сейчас эффективно до {limit_note:g}s)."
-        )
+        if inputs.cp_sat_stop_after_first_solution:
+            hint = (
+                " За лимит времени CP-SAT не нашёл ни одного допустимого расписания "
+                f"(включён stop_after_first_solution; лимит ≈{limit_note:g}s). "
+                "Это не «не успела оптимизация», а «нет ни одного подходящего набора смен за отведённое время» — "
+                "увеличьте scheduling.solver_time_limit_seconds, временно ослабьте ограничения "
+                "(min_employees_per_station, require_one_shift_per_sched_employee) или расширьте sched/shifts/staff_limits."
+            )
+        else:
+            hint = (
+                " Решатель не успел за лимит времени: увеличьте scheduling.solver_time_limit_seconds "
+                f"(сейчас эффективно до {limit_note:g}s) или включите cp_sat_stop_after_first_solution для остановки на первом допустимом."
+            )
     else:
         hint = " См. scheduling.* в YAML и входные sched/shifts/staff_limits."
     raise ScheduleError(base + hint)

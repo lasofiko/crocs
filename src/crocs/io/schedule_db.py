@@ -368,50 +368,144 @@ def try_load_cached_schedule(
             return None
         run_id = int(row[0])
 
-        sch_rows = conn.execute(
-            """SELECT ds, station_key, employee_id, starttime, finishtime
-               FROM schedule_assignments WHERE run_id = ?""",
-            (run_id,),
-        ).fetchall()
-        if not sch_rows:
+        pair = _load_dataframes_for_run_id(conn, run_id)
+        if pair is None:
             return None
-
-        schedule_records: list[dict[str, Any]] = []
-        for ds, st, emp, stt, fin in sch_rows:
-            schedule_records.append(
-                {
-                    "ds": str(ds),
-                    "station_key": str(st),
-                    "employee_id": emp,
-                    "starttime": _float_cell(stt),
-                    "finishtime": _float_cell(fin),
-                }
-            )
-        schedule_df = pd.DataFrame(schedule_records)
-
-        ld_rows = conn.execute(
-            """SELECT ds, sale_hour, station_key, required_employees, assigned_employees
-               FROM labor_demand_rows WHERE run_id = ?""",
-            (run_id,),
-        ).fetchall()
-        if not ld_rows:
-            labor_df = pd.DataFrame(
-                columns=["ds", "sale_hour", "station_key", "required_employees", "assigned_employees"],
-            )
-        else:
-            labor_records = []
-            for ds, sh, sk, rq, asn in ld_rows:
-                labor_records.append(
-                    {
-                        "ds": pd.to_datetime(ds, errors="coerce").normalize(),
-                        "sale_hour": int(sh),
-                        "station_key": str(sk),
-                        "required_employees": int(rq),
-                        "assigned_employees": int(asn) if asn is not None else 0,
-                    }
-                )
-            labor_df = pd.DataFrame(labor_records)
+        schedule_df, labor_df = pair
 
         return ScheduleCacheHit(schedule_df, labor_df, run_id, match_kind)
+    finally:
+        conn.close()
+
+
+def _load_dataframes_for_run_id(conn: sqlite3.Connection, run_id: int) -> tuple[pd.DataFrame, pd.DataFrame] | None:
+    sch_rows = conn.execute(
+        """SELECT ds, station_key, employee_id, starttime, finishtime
+           FROM schedule_assignments WHERE run_id = ?""",
+        (run_id,),
+    ).fetchall()
+    if not sch_rows:
+        return None
+
+    schedule_records: list[dict[str, Any]] = []
+    for ds, st, emp, stt, fin in sch_rows:
+        schedule_records.append(
+            {
+                "ds": str(ds),
+                "station_key": str(st),
+                "employee_id": emp,
+                "starttime": _float_cell(stt),
+                "finishtime": _float_cell(fin),
+            }
+        )
+    schedule_df = pd.DataFrame(schedule_records)
+
+    ld_rows = conn.execute(
+        """SELECT ds, sale_hour, station_key, required_employees, assigned_employees
+           FROM labor_demand_rows WHERE run_id = ?""",
+        (run_id,),
+    ).fetchall()
+    if not ld_rows:
+        labor_df = pd.DataFrame(
+            columns=["ds", "sale_hour", "station_key", "required_employees", "assigned_employees"],
+        )
+    else:
+        labor_records = []
+        for ds, sh, sk, rq, asn in ld_rows:
+            labor_records.append(
+                {
+                    "ds": pd.to_datetime(ds, errors="coerce").normalize(),
+                    "sale_hour": int(sh),
+                    "station_key": str(sk),
+                    "required_employees": int(rq),
+                    "assigned_employees": int(asn) if asn is not None else 0,
+                }
+            )
+        labor_df = pd.DataFrame(labor_records)
+
+    return schedule_df, labor_df
+
+
+def load_schedule_run_payload(
+    db_path: Path,
+    *,
+    run_id: int | None = None,
+) -> dict[str, Any] | None:
+    """
+    Загрузка прогона из SQLite для отдачи фронту/API.
+
+    ``run_id=None`` — последний run, у которого есть хотя бы одна смена.
+    Возвращает словарь с DataFrame ``schedule_df``, ``labor_df`` и полями метаданных или None.
+    """
+    if not db_path.is_file():
+        return None
+    conn = sqlite3.connect(str(db_path))
+    try:
+        _ensure_cache_key_column(conn)
+        _ensure_inputs_fingerprint_column(conn)
+        _ensure_labor_demand_assigned_column(conn)
+
+        if run_id is not None:
+            meta_row = conn.execute(
+                """
+                SELECT id, created_at, forecast_digest, cache_key, inputs_fingerprint, meta_json
+                FROM schedule_runs WHERE id = ?
+                """,
+                (int(run_id),),
+            ).fetchone()
+            if meta_row is None:
+                return None
+            rid = int(meta_row[0])
+            pair = _load_dataframes_for_run_id(conn, rid)
+            if pair is None:
+                return None
+            schedule_df, labor_df = pair
+            created_at, digest, ck, ifp, meta_json = (
+                meta_row[1],
+                meta_row[2],
+                meta_row[3],
+                meta_row[4],
+                meta_row[5],
+            )
+        else:
+            meta_row = conn.execute(
+                """
+                SELECT sr.id, sr.created_at, sr.forecast_digest, sr.cache_key, sr.inputs_fingerprint, sr.meta_json
+                FROM schedule_runs sr
+                WHERE EXISTS (SELECT 1 FROM schedule_assignments sa WHERE sa.run_id = sr.id LIMIT 1)
+                ORDER BY sr.id DESC LIMIT 1
+                """,
+            ).fetchone()
+            if meta_row is None:
+                return None
+            rid = int(meta_row[0])
+            pair = _load_dataframes_for_run_id(conn, rid)
+            if pair is None:
+                return None
+            schedule_df, labor_df = pair
+            created_at, digest, ck, ifp, meta_json = (
+                meta_row[1],
+                meta_row[2],
+                meta_row[3],
+                meta_row[4],
+                meta_row[5],
+            )
+
+        meta_obj: dict[str, Any]
+        try:
+            meta_obj = json.loads(meta_json) if meta_json else {}
+        except json.JSONDecodeError:
+            meta_obj = {}
+
+        return {
+            "run_id": rid,
+            "created_at": created_at,
+            "forecast_digest": digest,
+            "cache_key": ck,
+            "inputs_fingerprint": ifp,
+            "meta": meta_obj,
+            "schedule_df": schedule_df,
+            "labor_df": labor_df,
+        }
     finally:
         conn.close()
