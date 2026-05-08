@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# IDE
+.idea/
+.vscode/
+
+# Данные кейса (не коммитить выданные таблицы без необходимости)
+data/raw/*.csv
+data/raw/*.xlsx
+
+# Сгенерированные артефакты
+output/*.xlsx
+output/**/*.png
+output/**/*.mp4
+*.parquet
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+Thumbs.db
+.DS_Store

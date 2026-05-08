@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crocs"
+version = "0.1.0"
+description = "Прогноз гостей и расписание персонала ресторана (ТЗ кейса)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "openpyxl>=3.1",
+    "ortools>=9.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "ruff>=0.2"]
+ml = ["catboost>=1.2", "matplotlib>=3.8", "plotly>=5.18"]
+
+[project.scripts]
+crocs-run = "crocs.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
