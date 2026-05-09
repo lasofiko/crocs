@@ -10,6 +10,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from crocs.io.csv_repository import _load_table
 from crocs.ml.baseline import build_future_calendar, calculate_forecast_metrics
 from crocs.ml.features import add_calendar_features, add_lag_features, build_supervised_frame
 from crocs.ml.lightgbm_model import predict_lightgbm, train_lightgbm
@@ -20,14 +21,28 @@ console = Console()
 
 @app.command()
 def main(
-    train_path: Path = Path("data/raw/train.csv"),
-    output_dir: Path = Path("data/output"),
+    data_dir: Path = typer.Option(
+        Path("data/output"),
+        "--data-dir",
+        "-d",
+        help="Папка с train.csv или train.xlsx (как у python -m crocs).",
+    ),
+    output_dir: Path = typer.Option(
+        Path("data/output"),
+        "--output-dir",
+        "-o",
+        help="Куда сохранять прогноз и метрики.",
+    ),
     start: str = "2026-04-27",
     end: str = "2026-05-03",
     validation_start: str = "2026-03-01",
     train_start: str | None = None,
 ) -> None:
-    train = pd.read_csv(train_path)
+    train = _load_table(data_dir, "train")
+    if train is None:
+        raise FileNotFoundError(
+            f"Нет train: положите train.csv или train.xlsx в {data_dir.resolve()}"
+        )
     forecast_start = date.fromisoformat(start)
     forecast_end = date.fromisoformat(end)
     validation_start_date = date.fromisoformat(validation_start)
@@ -48,12 +63,47 @@ def main(
     _print_forecast_summary(forecast)
 
     forecast_path, metrics_path = _next_output_paths(output_dir)
-    forecast.to_excel(forecast_path, index=False, engine="xlsxwriter")
+    forecast.to_excel(forecast_path, index=False, engine="openpyxl")
     pd.DataFrame([metrics]).to_csv(metrics_path, index=False)
 
     console.print()
     console.print(f"[green]Saved forecast:[/green] {forecast_path}")
     console.print(f"[green]Saved metrics:[/green] {metrics_path}")
+
+
+def _resolve_train_validation_split(
+    prepared: pd.DataFrame,
+    validation_start: date,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.Timestamp]:
+    """Train = dates strictly before split; validation = from split onward.
+
+    If ``validation_start`` leaves no training rows (all data after that date),
+    split on the **last** calendar day in the data so earlier days are train.
+    """
+    validation_start_ts = pd.Timestamp(validation_start)
+    norm = prepared["sale_date"].dt.normalize()
+    train_part = cast(pd.DataFrame, prepared[norm < validation_start_ts.normalize()])
+    actual_part = cast(pd.DataFrame, prepared[norm >= validation_start_ts.normalize()])
+
+    if not train_part.empty and not actual_part.empty:
+        return train_part, actual_part, validation_start_ts
+
+    days = sorted(norm.unique())
+    if len(days) < 2:
+        raise ValueError(
+            "В train нужно минимум два разных календарных дня, чтобы посчитать "
+            "метрики на hold-out. Расширьте историю или задайте --validation-start "
+            "раньше минимальной даты в данных."
+        )
+
+    split_ts = cast(pd.Timestamp, days[-1])
+    train_part = cast(pd.DataFrame, prepared[norm < split_ts])
+    actual_part = cast(pd.DataFrame, prepared[norm >= split_ts])
+    console.print(
+        "[yellow]Все даты в train позже --validation-start; "
+        f"hold-out отнесён к последнему дню в данных ({split_ts.date()}).[/yellow]"
+    )
+    return train_part, actual_part, split_ts
 
 
 def _validate_lightgbm(
@@ -65,9 +115,7 @@ def _validate_lightgbm(
     prepared["sale_date"] = pd.to_datetime(prepared["sale_date"], errors="raise")
     prepared = _filter_by_train_start(prepared, train_start)
 
-    validation_start_ts = pd.Timestamp(validation_start)
-    train_part = cast(pd.DataFrame, prepared[prepared["sale_date"] < validation_start_ts])
-    actual_part = cast(pd.DataFrame, prepared[prepared["sale_date"] >= validation_start_ts])
+    train_part, actual_part, _ = _resolve_train_validation_split(prepared, validation_start)
 
     train_frame = build_supervised_frame(train_part)
     model = train_lightgbm(train_frame)
