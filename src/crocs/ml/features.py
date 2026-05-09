@@ -50,6 +50,11 @@ def add_calendar_features(df: pd.DataFrame) -> pd.DataFrame:
     featured["week_of_year"] = date_series.dt.isocalendar().week.astype(int)
     featured["month"] = date_series.dt.month
     featured["is_weekend"] = featured["day_of_week"].isin([5, 6]).astype(int)
+    featured["is_covid_period"] = (
+        (date_series >= pd.Timestamp("2020-03-01"))
+        & (date_series <= pd.Timestamp("2021-12-31"))
+    ).astype(int)
+    featured["is_after_rebrand"] = (date_series >= pd.Timestamp("2023-01-01")).astype(int)
     return featured
 
 
@@ -61,8 +66,14 @@ def add_lag_features(df: pd.DataFrame) -> pd.DataFrame:
     featured["lag_7d"] = grouped.shift(7)
     featured["lag_14d"] = grouped.shift(14)
     featured["lag_28d"] = grouped.shift(28)
+    featured["lag_56d"] = grouped.shift(56)
+    featured["lag_91d"] = grouped.shift(91)
+    featured["lag_182d"] = grouped.shift(182)
+    featured["lag_364d"] = grouped.shift(364)
     featured["rolling_7d_mean"] = grouped.shift(1).rolling(7, min_periods=3).mean()
     featured["rolling_28d_mean"] = grouped.shift(1).rolling(28, min_periods=7).mean()
+    featured["rolling_56d_mean"] = grouped.shift(1).rolling(56, min_periods=14).mean()
+    featured["rolling_91d_mean"] = grouped.shift(1).rolling(91, min_periods=21).mean()
 
     return featured.sort_values(["sale_date", "sale_hour"]).reset_index(drop=True)
 
