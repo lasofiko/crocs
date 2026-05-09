@@ -3,8 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from crocs.services.pipeline_service import run_pipeline, check_raw_present
 from crocs.io.csv_repository import _load_table
+from crocs.services.pipeline_service import check_raw_present, run_pipeline
 
 
 def _convert_xlsx_to_csv(data_dir: Path) -> int:
@@ -22,7 +22,7 @@ def _convert_xlsx_to_csv(data_dir: Path) -> int:
         csv_path = data_dir / f"{stem}.csv"
         if not xlsx_path.exists():
             continue
-        # Не перезаписываем существующий csv без запроса.
+        # Do not overwrite an existing CSV without an explicit request.
         if csv_path.exists():
             continue
         df = _load_table(data_dir, stem)
@@ -38,6 +38,12 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--data-dir", type=Path, default=Path("data/output"))
     p.add_argument("--artifacts-dir", type=Path, default=Path("artifacts"))
+    p.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="YAML config: forecast window and restaurant hours (default: configs/default.yaml).",
+    )
     p.add_argument("--check-only", action="store_true")
     p.add_argument("--convert-xlsx-to-csv", action="store_true")
     args = p.parse_args(argv)
@@ -52,6 +58,6 @@ def main(argv: list[str] | None = None) -> int:
         print("OK")
         return 0
 
-    run_pipeline(args.data_dir, args.artifacts_dir)
+    run_pipeline(args.data_dir, args.artifacts_dir, config_path=args.config)
     print("Done")
     return 0

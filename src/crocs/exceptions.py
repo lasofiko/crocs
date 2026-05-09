@@ -8,3 +8,7 @@ class DataValidationError(CrocsError):
 
 class ForecastError(CrocsError):
     pass
+
+
+class ScheduleError(CrocsError):
+    pass

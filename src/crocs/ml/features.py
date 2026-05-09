@@ -78,9 +78,12 @@ def add_lag_features(df: pd.DataFrame) -> pd.DataFrame:
     return featured.sort_values(["sale_date", "sale_hour"]).reset_index(drop=True)
 
 
-def build_supervised_frame(train: pd.DataFrame) -> pd.DataFrame:
+def build_supervised_frame(
+    train: pd.DataFrame,
+    hours: Iterable[int] | None = None,
+) -> pd.DataFrame:
     """Build a model-ready frame from raw train data."""
-    series = prepare_hourly_series(train)
+    series = prepare_hourly_series(train, hours=hours)
     featured = add_calendar_features(series)
     featured = add_lag_features(featured)
     span_days = (

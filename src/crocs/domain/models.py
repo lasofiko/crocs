@@ -34,3 +34,7 @@ class SchedulingInputs:
     station_priorities: pd.DataFrame
     shifts: pd.DataFrame
     staff_limits: pd.DataFrame
+    max_extra_coverage: int = 2
+    restaurant_open_hour: int = 7
+    restaurant_close_hour: int = 23
+    solver_time_limit_seconds: float | None = None
