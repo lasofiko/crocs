@@ -6,4 +6,6 @@ from crocs.domain.models import SchedulingInputs
 
 
 def solve_schedule(inputs: SchedulingInputs) -> pd.DataFrame:
-    raise NotImplementedError("CP-SAT → колонки ds, station_key, employee_id, starttime, finishtime")
+    raise NotImplementedError(
+        "CP-SAT schedule -> ds, station_key, employee_id, starttime, finishtime"
+    )

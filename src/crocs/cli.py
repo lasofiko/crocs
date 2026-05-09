@@ -1,42 +1,49 @@
 from __future__ import annotations
 
-import argparse
-import sys
 from pathlib import Path
 
+import typer
+from rich.console import Console
 
-def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser()
-    p.add_argument("--data-dir", type=Path, default=Path("data/raw"))
-    p.add_argument("--artifacts-dir", type=Path, default=Path("artifacts"))
-    p.add_argument("--check-only", action="store_true")
-    args = p.parse_args(argv)
+from crocs.config import load_settings
 
-    if args.check_only:
-        from crocs.services.pipeline_service import check_raw_present
+app = typer.Typer(no_args_is_help=True)
+console = Console()
 
-        try:
-            check_raw_present(args.data_dir)
-        except Exception as exc:  # noqa: BLE001
-            print(exc, file=sys.stderr)
-            return 1
-        print("OK", args.data_dir)
-        return 0
+
+@app.command("check-data")
+def check_data(config: Path = Path("configs/default.yaml")) -> None:
+    settings = load_settings(config)
+
+    from crocs.services.pipeline_service import check_raw_present
+
+    check_raw_present(settings.paths.raw_data_dir)
+    console.print(f"OK: raw data found in {settings.paths.raw_data_dir}")
+
+
+@app.command("run-all")
+def run_all(config: Path = Path("configs/default.yaml")) -> None:
+    settings = load_settings(config)
 
     from crocs.services.pipeline_service import run_pipeline
 
-    try:
-        result = run_pipeline(args.data_dir, args.artifacts_dir)
-    except NotImplementedError as exc:
-        print(exc, file=sys.stderr)
-        return 2
-    except Exception as exc:  # noqa: BLE001
-        print(exc, file=sys.stderr)
-        return 1
+    run_pipeline(
+        settings.paths.raw_data_dir,
+        settings.paths.output_dir,
+        settings=settings,
+    )
+    console.print(f"Outputs: {settings.paths.output_dir.resolve()}")
 
-    for w in result.warnings:
-        print(w, file=sys.stderr)
-    print(args.artifacts_dir.resolve())
+
+def main(argv: list[str] | None = None) -> int:
+    try:
+        app(args=argv, prog_name="crocs")
+    except NotImplementedError as exc:
+        console.print(str(exc), style="bold yellow")
+        return 2
+    except Exception as exc:
+        console.print(str(exc), style="bold red")
+        return 1
     return 0
 
 

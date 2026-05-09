@@ -11,17 +11,24 @@ dist/
 build/
 .pytest_cache/
 .ruff_cache/
+.pyright/
 .mypy_cache/
 
 # IDE
 .idea/
 .vscode/
 
-# Данные кейса (не коммитить выданные таблицы без необходимости)
+# Raw case data
 data/raw/*.csv
 data/raw/*.xlsx
 
-# Сгенерированные артефакты сдачи
+# Generated data and artifacts
+data/interim/*
+data/processed/*
+data/output/*
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+!data/output/.gitkeep
 artifacts/*.xlsx
 artifacts/**/*.png
 artifacts/**/*.mp4

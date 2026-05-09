@@ -4,20 +4,33 @@ from pathlib import Path
 
 import pandas as pd
 
-from crocs.domain.models import FORECAST_COLUMNS, SCHEDULE_COLUMNS
+from crocs.domain.models import (
+    COVERAGE_REPORT_COLUMNS,
+    FORECAST_COLUMNS,
+    LABOR_DEMAND_COLUMNS,
+    SCHEDULE_COLUMNS,
+)
+
+
+def _write_xlsx(df: pd.DataFrame, path: Path, columns: tuple[str, ...], label: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    missing = set(columns) - set(df.columns)
+    if missing:
+        raise ValueError(f"{label}: missing columns {sorted(missing)}")
+    df[list(columns)].to_excel(path, index=False, engine="xlsxwriter")
 
 
 def write_forecast_xlsx(df: pd.DataFrame, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    miss = set(FORECAST_COLUMNS) - set(df.columns)
-    if miss:
-        raise ValueError(f"forecast: нет колонок {sorted(miss)}")
-    df[list(FORECAST_COLUMNS)].to_excel(path, index=False)
+    _write_xlsx(df, path, FORECAST_COLUMNS, "forecast")
+
+
+def write_labor_demand_xlsx(df: pd.DataFrame, path: Path) -> None:
+    _write_xlsx(df, path, LABOR_DEMAND_COLUMNS, "labor_demand")
 
 
 def write_schedule_xlsx(df: pd.DataFrame, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    miss = set(SCHEDULE_COLUMNS) - set(df.columns)
-    if miss:
-        raise ValueError(f"schedule: нет колонок {sorted(miss)}")
-    df[list(SCHEDULE_COLUMNS)].to_excel(path, index=False)
+    _write_xlsx(df, path, SCHEDULE_COLUMNS, "schedule")
+
+
+def write_coverage_report_xlsx(df: pd.DataFrame, path: Path) -> None:
+    _write_xlsx(df, path, COVERAGE_REPORT_COLUMNS, "coverage_report")
