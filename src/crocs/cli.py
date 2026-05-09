@@ -1,51 +1,57 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
-import typer
-from rich.console import Console
-
-from crocs.config import load_settings
-
-app = typer.Typer(no_args_is_help=True)
-console = Console()
+from crocs.services.pipeline_service import run_pipeline, check_raw_present
+from crocs.io.csv_repository import _load_table
 
 
-@app.command("check-data")
-def check_data(config: Path = Path("configs/default.yaml")) -> None:
-    settings = load_settings(config)
-
-    from crocs.services.pipeline_service import check_raw_present
-
-    check_raw_present(settings.paths.raw_data_dir)
-    console.print(f"OK: raw data found in {settings.paths.raw_data_dir}")
-
-
-@app.command("run-all")
-def run_all(config: Path = Path("configs/default.yaml")) -> None:
-    settings = load_settings(config)
-
-    from crocs.services.pipeline_service import run_pipeline
-
-    run_pipeline(
-        settings.paths.raw_data_dir,
-        settings.paths.output_dir,
-        settings=settings,
+def _convert_xlsx_to_csv(data_dir: Path) -> int:
+    stems = (
+        "train",
+        "reqlabor",
+        "sched",
+        "station_priorities",
+        "shifts",
+        "staff_limits",
     )
-    console.print(f"Outputs: {settings.paths.output_dir.resolve()}")
+    converted = 0
+    for stem in stems:
+        xlsx_path = data_dir / f"{stem}.xlsx"
+        csv_path = data_dir / f"{stem}.csv"
+        if not xlsx_path.exists():
+            continue
+        # Не перезаписываем существующий csv без запроса.
+        if csv_path.exists():
+            continue
+        df = _load_table(data_dir, stem)
+        if df is None:
+            continue
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(csv_path, index=False)
+        converted += 1
+    return converted
 
 
 def main(argv: list[str] | None = None) -> int:
-    try:
-        app(args=argv, prog_name="crocs")
-    except NotImplementedError as exc:
-        console.print(str(exc), style="bold yellow")
-        return 2
-    except Exception as exc:
-        console.print(str(exc), style="bold red")
-        return 1
+    p = argparse.ArgumentParser()
+    p.add_argument("--data-dir", type=Path, default=Path("data/raw"))
+    p.add_argument("--artifacts-dir", type=Path, default=Path("artifacts"))
+    p.add_argument("--check-only", action="store_true")
+    p.add_argument("--convert-xlsx-to-csv", action="store_true")
+    args = p.parse_args(argv)
+
+    if args.convert_xlsx_to_csv:
+        n = _convert_xlsx_to_csv(args.data_dir)
+        print(f"Converted {n} file(s) from xlsx to csv in {args.data_dir}")
+        return 0
+
+    if args.check_only:
+        check_raw_present(args.data_dir)
+        print("OK")
+        return 0
+
+    run_pipeline(args.data_dir, args.artifacts_dir)
+    print("Done")
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
