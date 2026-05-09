@@ -21,10 +21,11 @@ build/
 data/raw/*.csv
 data/raw/*.xlsx
 
-# Сгенерированные артефакты
-output/*.xlsx
-output/**/*.png
-output/**/*.mp4
+# Сгенерированные артефакты сдачи
+artifacts/*.xlsx
+artifacts/**/*.png
+artifacts/**/*.mp4
+artifacts/**/*.json
 *.parquet
 
 # Jupyter

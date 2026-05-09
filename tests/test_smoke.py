@@ -1,5 +1,5 @@
 from crocs import __version__
-from crocs.schemas import FORECAST_COLUMNS, SCHEDULE_COLUMNS
+from crocs.domain.models import FORECAST_COLUMNS, SCHEDULE_COLUMNS
 
 
 def test_version():

@@ -1,14 +1,10 @@
 class CrocsError(Exception):
-    """Базовая ошибка пайплайна."""
+    pass
 
 
 class DataValidationError(CrocsError):
-    """Некорректные входные данные или схема CSV."""
+    pass
 
 
 class ForecastError(CrocsError):
-    """Ошибка модуля прогноза."""
-
-
-class SchedulingError(CrocsError):
-    """Ошибка оптимизатора расписания."""
+    pass
