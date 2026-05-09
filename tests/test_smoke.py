@@ -21,5 +21,5 @@ def test_schema_columns():
 
 def test_default_settings():
     settings = Settings()
-    assert settings.paths.raw_data_dir.as_posix() == "data/raw"
+    assert settings.paths.raw_data_dir.as_posix() == "data/output"
     assert settings.outputs.coverage_report == "coverage_report.xlsx"

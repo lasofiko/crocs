@@ -2,7 +2,7 @@ project:
   name: crocs
 
 paths:
-  raw_data_dir: data/raw
+  raw_data_dir: data/output
   output_dir: data/output
 
 inputs:

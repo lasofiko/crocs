@@ -36,7 +36,7 @@ def _convert_xlsx_to_csv(data_dir: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--data-dir", type=Path, default=Path("data/raw"))
+    p.add_argument("--data-dir", type=Path, default=Path("data/output"))
     p.add_argument("--artifacts-dir", type=Path, default=Path("artifacts"))
     p.add_argument("--check-only", action="store_true")
     p.add_argument("--convert-xlsx-to-csv", action="store_true")
