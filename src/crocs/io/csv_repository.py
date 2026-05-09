@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 
@@ -8,10 +9,15 @@ from crocs.domain.models import RawDataBundle
 from crocs.exceptions import DataValidationError
 
 
-def _load_table(data_dir: Path, stem: str) -> pd.DataFrame | None:
+def _load_table(data_dir: Path, stem: str, *, sheet_name: int | str = 0) -> Optional[pd.DataFrame]:
     csv_path = data_dir / f"{stem}.csv"
     if csv_path.is_file():
         return pd.read_csv(csv_path)
+
+    xlsx_path = data_dir / f"{stem}.xlsx"
+    if xlsx_path.is_file():
+        return pd.read_excel(xlsx_path, sheet_name=sheet_name)
+
     return None
 
 
@@ -40,5 +46,8 @@ def require_bundle(bundle: RawDataBundle) -> None:
         missing.append("shifts")
     if bundle.staff_limits is None:
         missing.append("staff_limits")
+
     if missing:
-        raise DataValidationError(f"Missing CSV files in data/raw: {', '.join(missing)}")
+        raise DataValidationError(
+            "Нет входных таблиц: " + ", ".join(f"{x}.csv/.xlsx" for x in missing)
+        )

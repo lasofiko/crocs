@@ -23,9 +23,8 @@ class RawDataBundle:
 @dataclass
 class PipelineResult:
     forecast: pd.DataFrame
-    labor_demand: pd.DataFrame
     schedule: pd.DataFrame
-    coverage_report: pd.DataFrame
+    warnings: list[str]
 
 
 @dataclass
