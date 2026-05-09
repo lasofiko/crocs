@@ -17,7 +17,8 @@ def _write_xlsx(df: pd.DataFrame, path: Path, columns: tuple[str, ...], label: s
     missing = set(columns) - set(df.columns)
     if missing:
         raise ValueError(f"{label}: missing columns {sorted(missing)}")
-    df[list(columns)].to_excel(path, index=False, engine="xlsxwriter")
+    # openpyxl уже тянется для read_excel; xlsxwriter опционален
+    df[list(columns)].to_excel(path, index=False, engine="openpyxl")
 
 
 def write_forecast_xlsx(df: pd.DataFrame, path: Path) -> None:
