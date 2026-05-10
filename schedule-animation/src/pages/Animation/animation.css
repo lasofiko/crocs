@@ -1,0 +1,16 @@
+.animation {
+    min-height: 100vh;
+}
+
+.animation--dimmed::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background-color: rgb(0 0 0 / 55%);
+}
+
+.animation .header {
+    z-index: 2;
+}
