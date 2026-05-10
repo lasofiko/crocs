@@ -29,6 +29,13 @@ dependencies = [
 crocs = "crocs.cli:main"
 crocs-run = "crocs.cli:main"
 
+[project.optional-dependencies]
+dev = [
+    "pyright>=1.1.380",
+    "pytest>=8.3.0",
+    "ruff>=0.6.0",
+]
+
 [dependency-groups]
 dev = [
     "pyright>=1.1.380",

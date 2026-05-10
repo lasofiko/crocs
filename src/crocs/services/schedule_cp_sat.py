@@ -356,8 +356,9 @@ def solve_schedule_cp_sat(inputs: SchedulingInputs) -> pd.DataFrame:
             cap_w = max(0, math.ceil(float(wc) - 1e-9))
             model.Add(sum(x[j] * int(options[j].duration) for j in idxs) <= cap_w)
         idxs_emp = [j for j in range(len(options)) if options[j].emp_key == ek]
+        max_sh = max(1, int(inputs.max_shifts_per_employee_week))
         if idxs_emp:
-            model.Add(sum(x[j] for j in idxs_emp) <= 5)
+            model.Add(sum(x[j] for j in idxs_emp) <= max_sh)
             model.Add(sum(x[j] for j in idxs_emp) >= 1)
 
     obj_terms: list[cp_model.LinearExpr] = []

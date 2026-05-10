@@ -56,7 +56,11 @@ def staffing_shortfall_hints(
     max_slots: int = 12,
     max_donors_per_slot: int = 8,
 ) -> list[str]:
-
+    """
+    Если на слот не хватает людей по геометрии sched/shifts/лимитам смены,
+    подсказать сотрудников, у которых в другие дни уже есть подходящее окно
+    на этот же час (можно расширить sched.csv по образцу).
+    """
     open_h = inputs.restaurant_open_hour
     close_h = inputs.restaurant_close_hour
     floor_n = inputs.min_employees_per_station

@@ -51,7 +51,7 @@ def main(
     validation_start_date = date.fromisoformat(validation_start)
     train_start_date = date.fromisoformat(train_start) if train_start else None
 
-    hours = tuple(range(open_hour, close_hour + 1))
+    hours = tuple(range(open_hour, close_hour))
 
     console.print("[bold]Validation metrics[/bold]")
     metrics = _validate_lightgbm(

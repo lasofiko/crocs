@@ -65,7 +65,7 @@ def staff_counts_per_slot(schedule_df: pd.DataFrame, open_h: int, close_h: int) 
         st = str(r["station_key"])
         t0 = float(r["starttime"])
         t1 = float(r["finishtime"])
-        for h in range(open_h, close_h + 1):
+        for h in range(open_h, close_h):
             if _shift_covers_hour(t0, t1, h):
                 rows.append({"ds": r["ds"], "sale_hour": h, "station_key": st})
     if not rows:
@@ -145,7 +145,7 @@ def plot_coverage_day_station(
     else:
         asub = pd.DataFrame(columns=["ds", "sale_hour", "station_key", "assigned"])
 
-    hours = list(range(open_h, close_h + 1))
+    hours = list(range(open_h, close_h))
     req_map = {int(r["sale_hour"]): float(r["required_employees"]) for _, r in sub.iterrows()}
     as_map = {int(r["sale_hour"]): int(r["assigned"]) for _, r in asub.iterrows()}
     req = [req_map.get(h, 0.0) for h in hours]

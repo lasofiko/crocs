@@ -28,7 +28,11 @@ def run_lightgbm_forecast(
     normalized = _normalize_train(train)
     _require_forecast_columns(normalized)
 
-    hours = tuple(range(open_hour, close_hour + 1))
+    if open_hour >= close_hour:
+        raise ForecastError(
+            "Нужно open_hour < close_hour; последний sale_hour = close_hour − 1 (закрытие в close_hour).",
+        )
+    hours = tuple(range(open_hour, close_hour))
     train_frame = build_supervised_frame(normalized, hours=hours)
     if train_frame.empty:
         raise ForecastError(

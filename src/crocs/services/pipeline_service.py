@@ -60,6 +60,7 @@ def run_pipeline(
             staff_limits=bundle.staff_limits,
             max_extra_coverage=settings.scheduling.max_extra_coverage,
             min_employees_per_station=settings.scheduling.min_employees_per_station,
+            max_shifts_per_employee_week=settings.scheduling.max_shifts_per_employee_week,
             restaurant_open_hour=settings.forecast.open_hour,
             restaurant_close_hour=settings.forecast.close_hour,
             solver_time_limit_seconds=settings.scheduling.solver_time_limit_seconds,

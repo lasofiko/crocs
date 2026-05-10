@@ -36,6 +36,9 @@ class SchedulingInputs:
     staff_limits: pd.DataFrame
     max_extra_coverage: int = 2
     min_employees_per_station: int = 2
+    # За плановую неделю (горизонт): каждый из sched — минимум одна смена, не больше max_shifts_per_employee_week.
+    max_shifts_per_employee_week: int = 5
     restaurant_open_hour: int = 7
+    # Час закрытия; почасовой спрос использует sale_hour ∈ [open, close).
     restaurant_close_hour: int = 23
     solver_time_limit_seconds: float | None = None
