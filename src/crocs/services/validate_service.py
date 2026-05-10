@@ -4,22 +4,9 @@ from typing import Iterable
 
 import pandas as pd
 
+from crocs.services.minor_shift_limits import compute_staff_caps
+
 _ID = ("employee_id", "staff_id", "emp_id")
-_WEEK_CAP = (
-    "worktime_limit",
-    "max_week_hours",
-    "weekly_hours_max",
-    "hours_week_max",
-    "max_hours_week",
-    "week_hours",
-)
-_SHIFT_CAP = (
-    "shift_limit",
-    "max_shift_hours",
-    "shift_hours_max",
-    "max_daily_hours",
-    "shift_max_hours",
-)
 _WDAY = ("day", "weekday", "day_of_week", "dow")
 _PRIO = ("shift_priority", "priority", "prio", "tier")
 _DUR = ("shift_duration", "duration_hours", "hours", "shift_hours", "duration")
@@ -42,7 +29,6 @@ def _nid(x: object) -> str:
 
 
 def _clock_hours(val: object) -> float:
-    """Часы от начала дня: число 9 -> 9:00, строка '09:30' -> 9.5, time/timestamp из Excel."""
     if pd.isna(val):
         return float("nan")
     if isinstance(val, bool):
@@ -100,36 +86,29 @@ def validate_schedule(
 
     s["_wd"] = ds.dt.dayofweek + 1
 
-    # Лимиты по закону / рабочему дню: неделя и одна смена (staff_limits), непонятно что делать если очнь много часов или стоит работа фулл дей
     eid_lim = _col(staff_limits, _ID)
-    c_week = _col(staff_limits, _WEEK_CAP)
-    c_shift = _col(staff_limits, _SHIFT_CAP)
     if eid_lim is None:
         bad.append("staff_limits: нет employee_id — проверка лимитов часов пропущена")
-    elif not c_week and not c_shift:
-        bad.append("staff_limits: нет колонок лимита недели/смены — проверка лимитов пропущена")
     else:
-        sl = staff_limits.rename(columns=lambda x: str(x).strip().lower())
-        lid = str(eid_lim).lower()
+        ref_day = pd.Timestamp(day.min()).normalize()
+        week_cap, shift_cap = compute_staff_caps(staff_limits, ref_day)
         sum_w = s.groupby("employee_id")["_dur_h"].sum()
         max_s = s.groupby("employee_id")["_dur_h"].max()
-        cw = str(c_week).lower() if c_week else None
-        cs = str(c_shift).lower() if c_shift else None
-        for _, row in sl.iterrows():
-            e = row.get(lid)
-            if pd.isna(e):
-                continue
-            k = _nid(e)
-            if cw and cw in row.index and pd.notna(row[cw]):
-                cap = float(row[cw])
-                keys = [x for x in sum_w.index if _nid(x) == k]
-                if keys and float(sum_w[keys[0]]) > cap + 1e-6:
-                    bad.append(f"часов за неделю больше лимита: сотрудник {e}, {float(sum_w[keys[0]]):.2f}ч > {cap}ч")
-            if cs and cs in row.index and pd.notna(row[cs]):
-                cap = float(row[cs])
-                keys = [x for x in max_s.index if _nid(x) == k]
-                if keys and float(max_s[keys[0]]) > cap + 1e-6:
-                    bad.append(f"смена длиннее допустимой: сотрудник {e}, {float(max_s[keys[0]]):.2f}ч > {cap}ч")
+        for emp, total in sum_w.items():
+            k = _nid(emp)
+            cap_w = week_cap.get(k)
+            if cap_w is not None and float(total) > float(cap_w) + 1e-6:
+                bad.append(
+                    f"часов за неделю больше лимита: сотрудник {emp}, {float(total):.2f}ч > {cap_w}ч",
+                )
+        for emp, mx in max_s.items():
+            k = _nid(emp)
+            cap_s = shift_cap.get(k, 24.0)
+            if float(mx) > float(cap_s) + 1e-6:
+                bad.append(
+                    f"смена длиннее допустимой (лимит таблицы и/или возраст несовершеннолетнего): "
+                    f"сотрудник {emp}, {float(mx):.2f}ч > {cap_s}ч",
+                )
 
     # Только дни недели 1–7; назначение только в разрешённые в sched дни и что делать если не хватает на день работников
     sid = _col(sched, _ID)
@@ -173,7 +152,7 @@ def validate_schedule(
             if k not in have:
                 bad.append(f"у сотрудника из sched (id={k}) нет ни одной смены — нужен минимум один рабочий день")
 
-    # Рабочие дни минимум 2 выходных и минимум 1 рабочий день, пока не понятно что делать при нарушении
+    # Рабочие дни минимум 2 выходных и минимум 1 рабочий день
     h = pd.date_range(ds.min().normalize(), ds.max().normalize(), freq="D")
     if len(h) != 7:
         bad.append(f"ожидается ровно 7 календарных дней, получилось {len(h)}")
@@ -186,7 +165,7 @@ def validate_schedule(
         if off < 2:
             bad.append(f"сотрудник {emp}: меньше двух выходных в неделе (выходных {off})")
 
-    # Длительность каждой смены соответствует таблице приоритетов 1–4. в зависимости от ответа на наш вопрос про кол-во времени решу что делать с приоритетами но пока оно надо какбудто
+    # Длительность каждой смены соответствует таблице приоритетов 1–4.
     if shifts is None or shifts.empty:
         bad.append("shifts пуст — проверка приоритетов 1–4 пропущена")
     else:

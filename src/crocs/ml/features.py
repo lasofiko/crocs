@@ -79,9 +79,20 @@ def add_lag_features(df: pd.DataFrame) -> pd.DataFrame:
     return featured.sort_values(["sale_date", "sale_hour"]).reset_index(drop=True)
 
 
-def build_supervised_frame(train: pd.DataFrame) -> pd.DataFrame:
+def build_supervised_frame(
+    train: pd.DataFrame,
+    hours: Iterable[int] | None = None,
+) -> pd.DataFrame:
     """Build a model-ready frame from raw train data."""
-    series = prepare_hourly_series(train)
+    series = prepare_hourly_series(train, hours=hours)
     featured = add_calendar_features(series)
     featured = add_lag_features(featured)
-    return featured.dropna(subset=["guests_count", "lag_7d", "lag_14d", "lag_28d"])
+    span_days = (
+        featured["sale_date"].max() - featured["sale_date"].min()
+    ).days + 1
+    # Лаги появляются только после достаточной истории; для коротких рядов не требуем их в dropna.
+    subset = ["guests_count"]
+    for lag, need_days in (("lag_7d", 8), ("lag_14d", 15), ("lag_28d", 29)):
+        if span_days >= need_days:
+            subset.append(lag)
+    return featured.dropna(subset=subset)

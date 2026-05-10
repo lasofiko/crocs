@@ -9,6 +9,7 @@ description = "Guest forecasting and restaurant staff shift scheduling."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "matplotlib>=3.9.0",
     "lightgbm>=4.6.0",
     "numpy>=2.1.0",
     "openpyxl>=3.1.0",
@@ -32,6 +33,13 @@ dependencies = [
 [project.scripts]
 crocs = "crocs.cli:main"
 crocs-run = "crocs.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pyright>=1.1.380",
+    "pytest>=8.3.0",
+    "ruff>=0.6.0",
+]
 
 [dependency-groups]
 dev = [

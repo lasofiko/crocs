@@ -42,12 +42,15 @@ class ForecastConfig(BaseModel):
     start: date = FORECAST_START
     end: date = FORECAST_END
     open_hour: int = Field(default=RESTAURANT_OPEN_HOUR, ge=0, le=23)
+    # Час закрытия (верхняя граница по времени); слоты sale_hour = open … close−1 (полуинтервал).
     close_hour: int = Field(default=RESTAURANT_CLOSE_HOUR, ge=1, le=24)
 
 
 class SchedulingConfig(BaseModel):
     solver_time_limit_seconds: int | None = None
     max_extra_coverage: int = Field(default=2, ge=0)
+    min_employees_per_station: int = Field(default=2, ge=0)
+    max_shifts_per_employee_week: int = Field(default=5, ge=1, le=7)
 
 
 class Settings(BaseSettings):
