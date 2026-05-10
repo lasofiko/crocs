@@ -13,6 +13,7 @@ COVERAGE_REPORT_COLUMNS = ("ds", "station_key", "employee_id", "issue_type", "de
 @dataclass
 class RawDataBundle:
     train: pd.DataFrame | None
+    weather: pd.DataFrame | None
     reqlabor: pd.DataFrame | None
     sched: pd.DataFrame | None
     station_priorities: pd.DataFrame | None

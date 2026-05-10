@@ -43,6 +43,7 @@ def run_pipeline(
         forecast_end=settings.forecast.end,
         open_hour=settings.forecast.open_hour,
         close_hour=settings.forecast.close_hour,
+        weather=bundle.weather,
     )
     _stage(f"Прогноз готов: {len(forecast_df)} строк.")
 
