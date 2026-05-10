@@ -8,6 +8,7 @@ from crocs.domain.models import (
 )
 from crocs.ml.features import add_calendar_features, build_supervised_frame
 from crocs.ml.lightgbm_model import FEATURE_COLUMNS
+from crocs.ml.weather import add_weather_features, parse_pogodaiklimat_archive
 
 
 def test_version():
@@ -106,3 +107,76 @@ def test_supervised_frame_cuts_history_before_stabilization_date():
     frame = build_supervised_frame(train, hours=(12,))
 
     assert frame["sale_date"].min() >= pd.Timestamp("2022-09-22")
+
+
+def test_weather_features_join_exact_hours_without_interpolation():
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        {
+            "sale_date": ["2026-05-01", "2026-05-01"],
+            "sale_hour": [9, 10],
+        }
+    )
+    weather = pd.DataFrame(
+        {
+            "sale_date": ["2026-05-01"],
+            "sale_hour": [9],
+            "temp_c": [12.5],
+            "dew_point_c": [4.0],
+            "humidity_pct": [60],
+            "effective_temp_c": [12.0],
+            "effective_sun_temp_c": [14.0],
+            "pressure_hpa": [1010.0],
+            "station_pressure_hpa": [992.0],
+            "precipitation_mm": [0.2],
+            "precipitation_24h_mm": [1.0],
+            "snow_depth_cm": [0],
+            "wind_speed_mps": [3],
+            "visibility_km": [20],
+            "cloud_total_octas": [8],
+            "is_weather_precipitation": [1],
+            "is_weather_rain": [1],
+            "is_weather_snow": [0],
+            "is_weather_fog": [0],
+            "is_weather_thunderstorm": [0],
+        }
+    )
+
+    featured = add_weather_features(frame, weather)
+
+    assert featured.loc[0, "has_weather_observation"] == 1
+    assert featured.loc[0, "weather_temp_c"] == 12.5
+    assert featured.loc[1, "has_weather_observation"] == 0
+    assert pd.isna(featured.loc[1, "weather_temp_c"])
+
+
+def test_pogodaiklimat_parser_converts_utc_to_moscow_hour():
+    import pandas as pd
+
+    rain_text = "\u0441\u043b\u0430\u0431. \u0434\u043e\u0436\u0434\u044c"
+    html = """
+    <table>
+      <tr><td colspan="2">time utc date</td></tr>
+      <tr><td>06</td><td>1.05</td></tr>
+    </table>
+    <table>
+      <tr>
+        <td colspan="2">wind</td><td>visibility</td><td>event</td><td>clouds</td>
+        <td>temp</td><td>dew</td><td>humidity</td><td>te</td><td>tes</td><td>comfort</td>
+        <td>P</td><td>Po</td><td>tmin</td><td>tmax</td><td>R</td><td>R24</td><td>S</td>
+      </tr>
+      <tr>
+        <td>SW</td><td>2</td><td>20 km</td><td>EVENT_TEXT</td><td>8/4 1000 m</td>
+        <td>+10.5</td><td>+4.5</td><td>70</td><td>+9</td><td>+11</td><td>cool</td>
+        <td>1012.3</td><td>994.1</td><td></td><td></td><td>0.4</td><td></td><td></td>
+      </tr>
+    </table>
+    """.replace("EVENT_TEXT", rain_text)
+
+    weather = parse_pogodaiklimat_archive(html, year=2026)
+
+    assert weather.loc[0, "sale_date"] == pd.Timestamp("2026-05-01").date()
+    assert weather.loc[0, "sale_hour"] == 9
+    assert weather.loc[0, "temp_c"] == 10.5
+    assert weather.loc[0, "is_weather_rain"] == 1

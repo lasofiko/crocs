@@ -49,6 +49,9 @@ def main(
         raise FileNotFoundError(
             f"No train file found: put train.csv or train.xlsx into {data_dir.resolve()}"
         )
+    weather = _load_table(data_dir, "weather_moscow")
+    if weather is None:
+        weather = _load_table(data_dir, "weather")
     forecast_start = date.fromisoformat(start)
     forecast_end = date.fromisoformat(end)
     validation_start_date = date.fromisoformat(validation_start)
@@ -62,6 +65,7 @@ def main(
         validation_start_date,
         train_start_date,
         hours=hours,
+        weather=weather,
     )
     _print_metrics(metrics)
 
@@ -72,6 +76,7 @@ def main(
         train_start_date,
         hours=hours,
         folds=cv_folds,
+        weather=weather,
     )
     if cv_metrics.empty:
         console.print("[yellow]Not enough history for rolling CV.[/yellow]")
@@ -95,6 +100,7 @@ def main(
         forecast_end=forecast_end,
         open_hour=open_hour,
         close_hour=close_hour,
+        weather=weather,
     )
 
     console.print()
@@ -152,6 +158,7 @@ def _validate_lightgbm(
     train_start: date | None,
     *,
     hours: tuple[int, ...],
+    weather: pd.DataFrame | None,
 ) -> dict[str, float]:
     prepared = train.copy()
     prepared["sale_date"] = pd.to_datetime(prepared["sale_date"], errors="raise")
@@ -159,11 +166,11 @@ def _validate_lightgbm(
 
     train_part, actual_part, _ = _resolve_train_validation_split(prepared, validation_start)
 
-    train_frame = build_supervised_frame(train_part, hours=hours)
+    train_frame = build_supervised_frame(train_part, hours=hours, weather=weather)
     model = train_lightgbm(train_frame)
 
     validation_calendar = cast(pd.DataFrame, actual_part[["sale_date", "sale_hour"]].copy())
-    predicted = recursive_forecast(model, train_part, validation_calendar)
+    predicted = recursive_forecast(model, train_part, validation_calendar, weather=weather)
 
     actual = cast(pd.DataFrame, actual_part[["sale_date", "sale_hour", "guests_count"]].copy())
     sale_date = cast(pd.Series, actual["sale_date"])
@@ -177,6 +184,7 @@ def _cross_validate_lightgbm(
     *,
     hours: tuple[int, ...],
     folds: int,
+    weather: pd.DataFrame | None,
 ) -> pd.DataFrame:
     prepared = train.copy()
     prepared["sale_date"] = pd.to_datetime(prepared["sale_date"], errors="raise")
@@ -199,12 +207,12 @@ def _cross_validate_lightgbm(
         if train_part.empty or actual_part.empty:
             continue
 
-        train_frame = build_supervised_frame(train_part, hours=hours)
+        train_frame = build_supervised_frame(train_part, hours=hours, weather=weather)
         if train_frame.empty:
             continue
         model = train_lightgbm(train_frame)
         validation_calendar = cast(pd.DataFrame, actual_part[["sale_date", "sale_hour"]].copy())
-        predicted = recursive_forecast(model, train_part, validation_calendar)
+        predicted = recursive_forecast(model, train_part, validation_calendar, weather=weather)
 
         actual = cast(pd.DataFrame, actual_part[["sale_date", "sale_hour", "guests_count"]].copy())
         sale_date = cast(pd.Series, actual["sale_date"])

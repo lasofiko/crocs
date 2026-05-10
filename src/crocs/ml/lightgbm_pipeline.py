@@ -16,6 +16,7 @@ from crocs.ml.features import (
     build_supervised_frame,
 )
 from crocs.ml.lightgbm_model import predict_lightgbm, train_lightgbm
+from crocs.ml.weather import add_weather_features
 
 
 def run_lightgbm_forecast(
@@ -25,6 +26,7 @@ def run_lightgbm_forecast(
     forecast_end: date,
     open_hour: int,
     close_hour: int,
+    weather: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Train LightGBM on history and produce hourly guests forecast for the date range."""
     if train.empty:
@@ -43,7 +45,7 @@ def run_lightgbm_forecast(
             "(restaurant closes at close_hour).",
         )
     hours = tuple(range(open_hour, close_hour))
-    train_frame = build_supervised_frame(normalized, hours=hours)
+    train_frame = build_supervised_frame(normalized, hours=hours, weather=weather)
     if train_frame.empty:
         raise ForecastError(
             "Train frame is empty after feature preparation: not enough history for lags "
@@ -52,7 +54,7 @@ def run_lightgbm_forecast(
 
     model = train_lightgbm(train_frame)
     future_calendar = build_future_calendar(forecast_start, forecast_end, hours=hours)
-    return recursive_forecast(model, normalized, future_calendar)
+    return recursive_forecast(model, normalized, future_calendar, weather=weather)
 
 
 def _normalize_train(train: pd.DataFrame) -> pd.DataFrame:
@@ -77,6 +79,8 @@ def recursive_forecast(
     model: lgb.LGBMRegressor,
     history: pd.DataFrame,
     target_calendar: pd.DataFrame,
+    *,
+    weather: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     history_frame = _prepare_history(history)
     calendar = _prepare_calendar(target_calendar)
@@ -88,7 +92,9 @@ def recursive_forecast(
         current_rows["guests_count"] = pd.NA
 
         combined = pd.concat([history_frame, current_rows], ignore_index=True)
-        featured = add_lag_features(add_calendar_features(combined))
+        featured = add_calendar_features(combined)
+        featured = add_weather_features(featured, weather)
+        featured = add_lag_features(featured)
         current_features = cast(pd.DataFrame, featured[featured["sale_date"] == sale_date].copy())
 
         current_prediction = predict_lightgbm(model, current_features)

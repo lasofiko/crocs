@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 
@@ -9,7 +8,7 @@ from crocs.domain.models import RawDataBundle
 from crocs.exceptions import DataValidationError
 
 
-def _load_table(data_dir: Path, stem: str, *, sheet_name: int | str = 0) -> Optional[pd.DataFrame]:
+def _load_table(data_dir: Path, stem: str, *, sheet_name: int | str = 0) -> pd.DataFrame | None:
     csv_path = data_dir / f"{stem}.csv"
     if csv_path.is_file():
         return pd.read_csv(csv_path)
@@ -22,8 +21,12 @@ def _load_table(data_dir: Path, stem: str, *, sheet_name: int | str = 0) -> Opti
 
 
 def load_raw_bundle(data_dir: Path) -> RawDataBundle:
+    weather = _load_table(data_dir, "weather_moscow")
+    if weather is None:
+        weather = _load_table(data_dir, "weather")
     return RawDataBundle(
         train=_load_table(data_dir, "train"),
+        weather=weather,
         reqlabor=_load_table(data_dir, "reqlabor"),
         sched=_load_table(data_dir, "sched"),
         station_priorities=_load_table(data_dir, "station_priorities"),

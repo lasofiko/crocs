@@ -37,6 +37,7 @@ def run_pipeline(
         forecast_end=settings.forecast.end,
         open_hour=settings.forecast.open_hour,
         close_hour=settings.forecast.close_hour,
+        weather=bundle.weather,
     )
 
     assert bundle.reqlabor is not None

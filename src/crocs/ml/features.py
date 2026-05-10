@@ -8,6 +8,7 @@ import pandas as pd
 
 from crocs.domain.models import FORECAST_COLUMNS
 from crocs.ml.russian_calendar import add_russian_calendar_features
+from crocs.ml.weather import add_weather_features
 
 MODEL_TRAIN_START = pd.Timestamp("2022-09-22")
 SALARY_DAYS = (5, 10, 15, 20, 25, 30)
@@ -207,10 +208,12 @@ def add_lag_features(df: pd.DataFrame) -> pd.DataFrame:
 def build_supervised_frame(
     train: pd.DataFrame,
     hours: Iterable[int] | None = None,
+    weather: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build a model-ready frame from raw train data."""
     series = prepare_hourly_series(train, hours=hours)
     featured = add_calendar_features(series)
+    featured = add_weather_features(featured, weather)
     featured = add_lag_features(featured)
     span_days = (featured["sale_date"].max() - featured["sale_date"].min()).days + 1
 
