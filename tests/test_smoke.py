@@ -6,6 +6,7 @@ from crocs.domain.models import (
     LABOR_DEMAND_COLUMNS,
     SCHEDULE_COLUMNS,
 )
+from crocs.ml.ensemble_model import BASE_MODEL_NAMES, _inverse_error_weights
 from crocs.ml.features import add_calendar_features, build_supervised_frame
 from crocs.ml.lightgbm_model import FEATURE_COLUMNS
 from crocs.ml.weather import add_weather_features, parse_pogodaiklimat_archive
@@ -180,3 +181,18 @@ def test_pogodaiklimat_parser_converts_utc_to_moscow_hour():
     assert weather.loc[0, "sale_hour"] == 9
     assert weather.loc[0, "temp_c"] == 10.5
     assert weather.loc[0, "is_weather_rain"] == 1
+
+
+def test_ensemble_weights_prefer_lower_validation_error():
+    weights = _inverse_error_weights(
+        {
+            "random_forest": 0.20,
+            "xgboost": 0.10,
+            "catboost": 0.05,
+            "lightgbm": 0.15,
+        }
+    )
+
+    assert set(weights) == set(BASE_MODEL_NAMES)
+    assert round(sum(weights.values()), 6) == 1.0
+    assert weights["catboost"] > weights["xgboost"] > weights["random_forest"]

@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date
 from typing import cast
 
-import lightgbm as lgb
 import pandas as pd
 
 from crocs.domain.models import FORECAST_COLUMNS
@@ -12,17 +11,21 @@ from crocs.domain.models import FORECAST_COLUMNS
 _HISTORY_LOOKBACK_DAYS = 420
 from crocs.exceptions import ForecastError
 from crocs.ml.baseline import build_future_calendar
+from crocs.ml.ensemble_model import (
+    ForecastEnsemble,
+    predict_forecast_ensemble,
+    train_forecast_ensemble,
+)
 from crocs.ml.features import (
     MODEL_TRAIN_START,
     add_calendar_features,
     add_lag_features,
     build_supervised_frame,
 )
-from crocs.ml.lightgbm_model import predict_lightgbm, train_lightgbm
 from crocs.ml.weather import add_weather_features
 
 
-def run_lightgbm_forecast(
+def run_ensemble_forecast(
     train: pd.DataFrame,
     *,
     forecast_start: date,
@@ -31,7 +34,7 @@ def run_lightgbm_forecast(
     close_hour: int,
     weather: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Train LightGBM on history and produce hourly guests forecast for the date range."""
+    """Train ensemble models on history and produce hourly guests forecast."""
     if train.empty:
         raise ForecastError("train is empty")
 
@@ -55,9 +58,29 @@ def run_lightgbm_forecast(
             "or all rows were filtered out."
         )
 
-    model = train_lightgbm(train_frame)
+    model = train_forecast_ensemble(train_frame)
     future_calendar = build_future_calendar(forecast_start, forecast_end, hours=hours)
     return recursive_forecast(model, normalized, future_calendar, weather=weather)
+
+
+def run_lightgbm_forecast(
+    train: pd.DataFrame,
+    *,
+    forecast_start: date,
+    forecast_end: date,
+    open_hour: int,
+    close_hour: int,
+    weather: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Backward-compatible wrapper for the ensemble forecast pipeline."""
+    return run_ensemble_forecast(
+        train,
+        forecast_start=forecast_start,
+        forecast_end=forecast_end,
+        open_hour=open_hour,
+        close_hour=close_hour,
+        weather=weather,
+    )
 
 
 def _normalize_train(train: pd.DataFrame) -> pd.DataFrame:
@@ -87,7 +110,7 @@ def _trim_history_window(history_frame: pd.DataFrame, *, before_date: pd.Timesta
 
 
 def recursive_forecast(
-    model: lgb.LGBMRegressor,
+    model: ForecastEnsemble,
     history: pd.DataFrame,
     target_calendar: pd.DataFrame,
     *,
@@ -110,7 +133,7 @@ def recursive_forecast(
         featured = add_lag_features(featured)
         current_features = cast(pd.DataFrame, featured[featured["sale_date"] == sale_date].copy())
 
-        current_prediction = predict_lightgbm(model, current_features)
+        current_prediction = predict_forecast_ensemble(model, current_features)["ensemble"]
         current_output = current_calendar.copy()
         current_output["guests_count"] = (
             current_prediction.round().clip(lower=0).astype(int).to_numpy()
