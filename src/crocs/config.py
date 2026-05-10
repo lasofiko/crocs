@@ -48,6 +48,7 @@ class ForecastConfig(BaseModel):
 class SchedulingConfig(BaseModel):
     solver_time_limit_seconds: int | None = None
     max_extra_coverage: int = Field(default=2, ge=0)
+    min_employees_per_station: int = Field(default=2, ge=0)
 
 
 class Settings(BaseSettings):

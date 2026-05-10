@@ -10,6 +10,7 @@ from ortools.sat.python import cp_model
 
 from crocs.domain.models import SchedulingInputs
 from crocs.exceptions import ScheduleError
+from crocs.services.minor_shift_limits import compute_staff_caps
 
 
 def _nid(x: object) -> str:
@@ -63,7 +64,6 @@ class _ShiftOption:
 
 
 def _parse_shifts(shifts: pd.DataFrame) -> list[tuple[int, int]]:
-    """Return (duration_hours_int, priority) sorted by priority ascending (better first)."""
     sh = shifts.copy()
     sh.columns = [str(c).strip().lower() for c in sh.columns]
     dur_col = None
@@ -107,7 +107,6 @@ def _station_penalties(
     emp_keys: list[str],
     stations: list[str],
 ) -> dict[tuple[str, str], int]:
-    """Higher penalty = worse assignment (for minimization)."""
     sp = station_priorities.copy()
     sp.columns = [str(c).strip().lower() for c in sp.columns]
     pen: dict[tuple[str, str], int] = {}
@@ -153,51 +152,7 @@ def _station_penalties(
     return pen
 
 
-def _staff_caps(staff_limits: pd.DataFrame) -> tuple[dict[str, float], dict[str, float]]:
-    lim = staff_limits.copy()
-    lim.columns = [str(c).strip().lower() for c in lim.columns]
-    eid = None
-    for c in lim.columns:
-        if c in ("employee_id", "staff_id", "emp_id"):
-            eid = c
-            break
-    week_col = None
-    shift_col = None
-    for c in lim.columns:
-        if c in (
-            "worktime_limit",
-            "max_week_hours",
-            "weekly_hours_max",
-            "hours_week_max",
-            "max_hours_week",
-            "week_hours",
-        ):
-            week_col = c
-        if c in (
-            "shift_limit",
-            "max_shift_hours",
-            "shift_hours_max",
-            "max_daily_hours",
-            "shift_max_hours",
-        ):
-            shift_col = c
-    week: dict[str, float] = {}
-    shift: dict[str, float] = {}
-    if eid is None:
-        return week, shift
-    for _, row in lim.iterrows():
-        k = _nid(row[eid])
-        if not k:
-            continue
-        if week_col is not None and pd.notna(row.get(week_col)):
-            week[k] = float(row[week_col])
-        if shift_col is not None and pd.notna(row.get(shift_col)):
-            shift[k] = float(row[shift_col])
-    return week, shift
-
-
 def _sched_windows(sched: pd.DataFrame) -> dict[tuple[str, int], tuple[float, float]]:
-    """(employee_key, weekday 1..7) -> (start_h, end_h) exclusive end, merged span per weekday."""
     s = sched.copy()
     s.columns = [str(c).strip().lower() for c in s.columns]
     ecol = dcol = stcol = ftcol = None
@@ -238,7 +193,6 @@ def _sched_windows(sched: pd.DataFrame) -> dict[tuple[str, int], tuple[float, fl
 def _demand_grid(
     hourly_demand: pd.DataFrame,
 ) -> tuple[list[Any], list[int], list[str], dict[tuple[int, int, str], int], dict[int, Any]]:
-    """days, hours, stations, demand[day_idx,hour,station]=req, day index -> timestamp."""
     h = hourly_demand.copy()
     h.columns = [str(c).strip().lower() for c in h.columns]
     need = ("ds", "sale_hour", "station_key", "required_employees")
@@ -282,7 +236,6 @@ def _demand_grid(
 
 
 def solve_schedule_cp_sat(inputs: SchedulingInputs) -> pd.DataFrame:
-    """CP-SAT shift assignment: demand coverage and labor rules."""
     open_h = inputs.restaurant_open_hour
     close_h = inputs.restaurant_close_hour
     rest_end_exc = close_h + 1
@@ -290,8 +243,11 @@ def solve_schedule_cp_sat(inputs: SchedulingInputs) -> pd.DataFrame:
 
     days, hours, stations, demand_raw, day_ts = _demand_grid(inputs.hourly_demand)
     demand = demand_raw
+    floor_n = inputs.min_employees_per_station
+    if floor_n > 0:
+        demand = {k: max(int(v), floor_n) for k, v in demand.items()}
     shift_pairs = _parse_shifts(inputs.shifts)
-    week_cap, shift_cap = _staff_caps(inputs.staff_limits)
+    week_cap, shift_cap = compute_staff_caps(inputs.staff_limits, pd.Timestamp(days[0]))
     windows = _sched_windows(inputs.sched)
 
     sched_df = inputs.sched.copy()
@@ -312,7 +268,6 @@ def solve_schedule_cp_sat(inputs: SchedulingInputs) -> pd.DataFrame:
         smax = shift_cap.get(ek, 24.0)
         for day_idx in range(len(days)):
             ts = day_ts[day_idx]
-            # Колонка day в sched: понедельник=1 … воскресенье=7 (как pandas dayofweek+1).
             wd = int(pd.Timestamp(ts).dayofweek + 1)
             win = windows.get((ek, wd))
             if win is None:

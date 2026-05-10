@@ -28,3 +28,4 @@ forecast:
 scheduling:
   solver_time_limit_seconds: null
   max_extra_coverage: 2
+  min_employees_per_station: 2

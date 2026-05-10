@@ -52,11 +52,14 @@ def _minimal_feasible_inputs() -> SchedulingInputs:
     )
 
 
-def test_cp_sat_produces_seven_shifts():
+def test_cp_sat_produces_two_shifts_per_day_with_min_station_staff():
+    """При min_employees_per_station=2 на каждый слот нужно два человека (по умолчанию)."""
     out = solve_schedule_cp_sat(_minimal_feasible_inputs())
     assert not out.empty
-    assert len(out) == 7
+    assert len(out) == 14
     assert set(out["station_key"].unique()) == {"S1"}
+    per_day = out.groupby("ds").size()
+    assert (per_day == 2).all()
 
 
 def test_one_shift_per_employee_per_day():
