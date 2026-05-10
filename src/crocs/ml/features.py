@@ -6,6 +6,7 @@ from typing import cast
 import pandas as pd
 
 from crocs.domain.models import FORECAST_COLUMNS
+from crocs.ml.russian_calendar import add_russian_calendar_features
 
 
 def prepare_hourly_series(
@@ -55,7 +56,7 @@ def add_calendar_features(df: pd.DataFrame) -> pd.DataFrame:
         & (date_series <= pd.Timestamp("2021-12-31"))
     ).astype(int)
     featured["is_after_rebrand"] = (date_series >= pd.Timestamp("2023-01-01")).astype(int)
-    return featured
+    return add_russian_calendar_features(featured)
 
 
 def add_lag_features(df: pd.DataFrame) -> pd.DataFrame:
