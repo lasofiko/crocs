@@ -9,7 +9,12 @@ import pandas as pd
 from crocs.domain.models import FORECAST_COLUMNS
 from crocs.exceptions import ForecastError
 from crocs.ml.baseline import build_future_calendar
-from crocs.ml.features import add_calendar_features, add_lag_features, build_supervised_frame
+from crocs.ml.features import (
+    MODEL_TRAIN_START,
+    add_calendar_features,
+    add_lag_features,
+    build_supervised_frame,
+)
 from crocs.ml.lightgbm_model import predict_lightgbm, train_lightgbm
 
 
@@ -27,18 +32,22 @@ def run_lightgbm_forecast(
 
     normalized = _normalize_train(train)
     _require_forecast_columns(normalized)
+    normalized["sale_date"] = pd.to_datetime(normalized["sale_date"], errors="raise")
+    normalized = normalized[normalized["sale_date"] >= MODEL_TRAIN_START].copy()
+    if normalized.empty:
+        raise ForecastError(f"train has no rows on or after {MODEL_TRAIN_START.date()}")
 
     if open_hour >= close_hour:
         raise ForecastError(
-            "Нужно open_hour < close_hour; последний sale_hour = close_hour - 1 "
-            "(закрытие в close_hour).",
+            "Need open_hour < close_hour; last sale_hour = close_hour - 1 "
+            "(restaurant closes at close_hour).",
         )
     hours = tuple(range(open_hour, close_hour))
     train_frame = build_supervised_frame(normalized, hours=hours)
     if train_frame.empty:
         raise ForecastError(
-            "После подготовки фич train пуст: недостаточно истории для лагов "
-            "или все строки отфильтрованы."
+            "Train frame is empty after feature preparation: not enough history for lags "
+            "or all rows were filtered out."
         )
 
     model = train_lightgbm(train_frame)
@@ -56,12 +65,12 @@ def _require_forecast_columns(frame: pd.DataFrame) -> None:
     need = set(FORECAST_COLUMNS)
     missing = need - set(frame.columns)
     if missing:
-        raise ForecastError(f"train: нет колонок {sorted(missing)}")
+        raise ForecastError(f"train is missing columns: {sorted(missing)}")
 
     t = frame.copy()
     t["sale_date"] = pd.to_datetime(t["sale_date"], errors="coerce")
     if t["sale_date"].isna().any():
-        raise ForecastError("train: некорректные sale_date")
+        raise ForecastError("train has invalid sale_date values")
 
 
 def recursive_forecast(
