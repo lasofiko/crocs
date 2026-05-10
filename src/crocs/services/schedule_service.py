@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pandas as pd
+
 from crocs.domain.models import SchedulingInputs
 from crocs.exceptions import ScheduleError
 from crocs.services.schedule_cp_sat import solve_schedule_cp_sat

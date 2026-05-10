@@ -23,10 +23,10 @@ console = Console()
 @app.command()
 def main(
     data_dir: Path = typer.Option(
-        Path("data/output"),
+        Path("data/raw"),
         "--data-dir",
         "-d",
-        help="Папка с train.csv или train.xlsx (как у python -m crocs).",
+        help="Папка с train.csv или train.xlsx (как у python -m crocs; по умолчанию data/raw).",
     ),
     output_dir: Path = typer.Option(
         Path("data/output"),

@@ -18,7 +18,7 @@ class ProjectConfig(BaseModel):
 
 
 class PathConfig(BaseModel):
-    raw_data_dir: Path = Path("data/output")
+    raw_data_dir: Path = Path("data/raw")
     output_dir: Path = Path("data/output")
 
 

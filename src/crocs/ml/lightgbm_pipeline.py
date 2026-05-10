@@ -7,6 +7,9 @@ import lightgbm as lgb
 import pandas as pd
 
 from crocs.domain.models import FORECAST_COLUMNS
+
+# Лаги не длиннее ~364 дней; без обрезки истории concat в recursive_forecast раздувается и тормозит/OOM.
+_HISTORY_LOOKBACK_DAYS = 420
 from crocs.exceptions import ForecastError
 from crocs.ml.baseline import build_future_calendar
 from crocs.ml.features import add_calendar_features, add_lag_features, build_supervised_frame
@@ -64,6 +67,14 @@ def _require_forecast_columns(frame: pd.DataFrame) -> None:
         raise ForecastError("train: некорректные sale_date")
 
 
+def _trim_history_window(history_frame: pd.DataFrame, *, before_date: pd.Timestamp) -> pd.DataFrame:
+    cutoff = before_date - pd.Timedelta(days=_HISTORY_LOOKBACK_DAYS)
+    trimmed = history_frame[history_frame["sale_date"] >= cutoff]
+    if len(trimmed) == len(history_frame):
+        return history_frame
+    return trimmed.reset_index(drop=True)
+
+
 def recursive_forecast(
     model: lgb.LGBMRegressor,
     history: pd.DataFrame,
@@ -71,6 +82,8 @@ def recursive_forecast(
 ) -> pd.DataFrame:
     history_frame = _prepare_history(history)
     calendar = _prepare_calendar(target_calendar)
+    fc_min = cast(pd.Timestamp, calendar["sale_date"].min())
+    history_frame = _trim_history_window(history_frame, before_date=fc_min)
     predictions: list[pd.DataFrame] = []
 
     for sale_date in sorted(cast(pd.Series, calendar["sale_date"]).unique().tolist()):
@@ -90,6 +103,10 @@ def recursive_forecast(
         predictions.append(current_output)
 
         history_frame = pd.concat([history_frame, current_output], ignore_index=True)
+        history_frame = _trim_history_window(
+            history_frame,
+            before_date=cast(pd.Timestamp, pd.Timestamp(sale_date)),
+        )
 
     forecast = pd.concat(predictions, ignore_index=True)
     sale_date_series = cast(pd.Series, forecast["sale_date"])

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import math
+import os
+import sys
+import threading
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
@@ -11,6 +15,57 @@ from ortools.sat.python import cp_model
 from crocs.domain.models import SchedulingInputs
 from crocs.exceptions import ScheduleError
 from crocs.services.minor_shift_limits import compute_staff_caps
+
+# Если в конфиге null — без лимита солвер может считать очень долго на больших моделях.
+_CP_SAT_DEFAULT_MAX_TIME_S = 300.0
+
+
+def _cp_sat_worker_count() -> int:
+    """Conservative default worker count for solver stability on Windows."""
+    raw = os.environ.get("CROCS_CP_SAT_WORKERS", "").strip()
+    if raw.isdigit():
+        return max(1, min(32, int(raw)))
+    ncpu = os.cpu_count() or 4
+    workers = min(8, max(1, ncpu))
+    if sys.platform == "win32":
+        workers = min(workers, 4)
+    return workers
+
+
+def _heartbeat_enabled() -> bool:
+    raw = os.environ.get("CROCS_CP_SAT_HEARTBEAT", "").strip().lower()
+    # default on for user feedback, can be disabled when investigating native crashes
+    return raw not in ("0", "false", "no", "off")
+
+
+def _cp_status_label(st: int) -> str:
+    """Имя статуса CP-SAT по коду возврата Solve() (совместимо с разными версиями ortools)."""
+    for name in ("OPTIMAL", "FEASIBLE", "INFEASIBLE", "MODEL_INVALID", "UNKNOWN"):
+        if hasattr(cp_model, name) and int(getattr(cp_model, name)) == int(st):
+            return name
+    return f"STATUS_{st}"
+
+
+def _solve_with_heartbeat(solver: cp_model.CpSolver, model: cp_model.CpModel, limit_s: float) -> int:
+    """Периодический вывод в консоль: большие модели могут молчать до отключения лимита времени."""
+    stop = threading.Event()
+    t0 = time.perf_counter()
+
+    def _tick() -> None:
+        interval = 45.0
+        while not stop.wait(interval):
+            elapsed = time.perf_counter() - t0
+            print(
+                f"CP-SAT: все еще считает... ~{elapsed:.0f}s, лимит времени <= {limit_s:g}s (не закрывайте окно).",
+                flush=True,
+            )
+
+    th = threading.Thread(target=_tick, daemon=True)
+    th.start()
+    try:
+        return int(solver.Solve(model))
+    finally:
+        stop.set()
 
 
 def _nid(x: object) -> str:
@@ -338,7 +393,7 @@ def solve_schedule_cp_sat(inputs: SchedulingInputs) -> pd.DataFrame:
         if not idxs:
             ds_label = pd.Timestamp(day_ts[di]).strftime("%Y-%m-%d (%A)")
             hint = (
-                "В sched.csv колонка day: понедельник=1 … воскресенье=7. "
+                "В sched.csv колонка day: понедельник=1 ... воскресенье=7. "
                 "Окно starttime..finishtime должно допускать смену из shifts.csv на этот час; "
                 f"проверьте shift_limit. Дата={ds_label}."
             )
@@ -371,14 +426,52 @@ def solve_schedule_cp_sat(inputs: SchedulingInputs) -> pd.DataFrame:
     solver = cp_model.CpSolver()
     if inputs.solver_time_limit_seconds is not None:
         solver.parameters.max_time_in_seconds = float(inputs.solver_time_limit_seconds)
-    solver.parameters.num_search_workers = 8
+    else:
+        solver.parameters.max_time_in_seconds = _CP_SAT_DEFAULT_MAX_TIME_S
 
-    status = solver.Solve(model)
+    limit_note = (
+        float(inputs.solver_time_limit_seconds)
+        if inputs.solver_time_limit_seconds is not None
+        else _CP_SAT_DEFAULT_MAX_TIME_S
+    )
+    workers = _cp_sat_worker_count()
+    print(
+        f"CP-SAT: переменных={len(x)}, потоков={workers}, лимит={limit_note:g}s "
+        f"(solver_time_limit_seconds в YAML; если null - берется {_CP_SAT_DEFAULT_MAX_TIME_S:g}s)",
+        flush=True,
+    )
+
+    solver.parameters.num_search_workers = workers
+
+    t_solve0 = time.perf_counter()
+    if _heartbeat_enabled():
+        status = _solve_with_heartbeat(solver, model, limit_note)
+    else:
+        status = int(solver.Solve(model))
+    solve_secs = time.perf_counter() - t_solve0
+    print(
+        f"CP-SAT: поиск завершен за {solve_secs:.1f}s, статус={_cp_status_label(status)}.",
+        flush=True,
+    )
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        raise ScheduleError(
-            "CP-SAT found no feasible schedule (check staffing, demand, sched windows). "
-            f"status={solver.StatusName(status)}",
+        base = (
+            "CP-SAT: нет допустимого расписания или решатель не успел "
+            f"(status={_cp_status_label(status)})."
         )
+        if status == cp_model.INFEASIBLE:
+            hint = (
+                " Модель недостижима: попробуйте scheduling.min_employees_per_station: 1 "
+                "(configs/relaxed_scheduling.yaml), расширьте окна starttime/finishtime в sched.csv "
+                "или смены в shifts.csv, проверьте worktime_limit/shift_limit в staff_limits.csv."
+            )
+        elif status == cp_model.UNKNOWN:
+            hint = (
+                " Решатель не успел за лимит времени: увеличьте scheduling.solver_time_limit_seconds "
+                f"(сейчас эффективно до {limit_note:g}s) или запустите с configs/relaxed_scheduling.yaml."
+            )
+        else:
+            hint = " См. scheduling.* в YAML и входные sched/shifts/staff_limits."
+        raise ScheduleError(base + hint)
 
     rows_out: list[dict[str, Any]] = []
     for i, opt in enumerate(options):

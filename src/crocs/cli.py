@@ -1,13 +1,36 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
-from crocs.io.csv_repository import _load_table
-from crocs.services.pipeline_service import check_raw_present, run_pipeline
+def _configure_console_output() -> None:
+    """Windows console safety: never fail on unsupported codepage chars."""
+    import sys
+
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(errors="replace")
+            except (OSError, ValueError, AttributeError, TypeError):
+                pass
+
+
+def _configure_numeric_threads() -> None:
+    """Reduce BLAS/OpenMP pressure to avoid OpenBLAS allocation failures."""
+    defaults = {
+        "OPENBLAS_NUM_THREADS": "1",
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+    }
+    for key, value in defaults.items():
+        os.environ.setdefault(key, value)
 
 
 def _convert_xlsx_to_csv(data_dir: Path) -> int:
+    from crocs.io.csv_repository import _load_table
+
     stems = (
         "train",
         "reqlabor",
@@ -35,8 +58,10 @@ def _convert_xlsx_to_csv(data_dir: Path) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_console_output()
+    _configure_numeric_threads()
     p = argparse.ArgumentParser()
-    p.add_argument("--data-dir", type=Path, default=Path("data/output"))
+    p.add_argument("--data-dir", type=Path, default=Path("data/raw"))
     p.add_argument("--artifacts-dir", type=Path, default=Path("artifacts"))
     p.add_argument(
         "--config",
@@ -54,10 +79,46 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.check_only:
+        from crocs.services.pipeline_service import check_raw_present
+
         check_raw_present(args.data_dir)
         print("OK")
         return 0
 
-    run_pipeline(args.data_dir, args.artifacts_dir, config_path=args.config)
-    print("Done")
+    print(
+        "Пайплайн (прогноз + расписание): "
+        f"данные={args.data_dir.resolve()} -> артефакты={args.artifacts_dir.resolve()}",
+        flush=True,
+    )
+    from crocs.exceptions import DataValidationError, ScheduleError
+    from crocs.services.pipeline_service import run_pipeline
+
+    try:
+        result = run_pipeline(args.data_dir, args.artifacts_dir, config_path=args.config)
+    except DataValidationError as exc:
+        print(f"Ошибка входных данных: {exc}", flush=True)
+        return 1
+    except ScheduleError as exc:
+        msg = str(exc)
+        relaxed_cfg = Path("configs/relaxed_scheduling.yaml")
+        can_retry_relaxed = args.config is None and relaxed_cfg.exists() and "INFEASIBLE" in msg
+        if can_retry_relaxed:
+            print(
+                "CP-SAT вернул INFEASIBLE на default-конфиге; пробую автоматически relaxed-конфиг...",
+                flush=True,
+            )
+            try:
+                result = run_pipeline(args.data_dir, args.artifacts_dir, config_path=relaxed_cfg)
+            except Exception as relaxed_exc:
+                print(f"Ошибка расписания (после relaxed): {relaxed_exc}", flush=True)
+                return 1
+        else:
+            print(f"Ошибка расписания: {exc}", flush=True)
+            return 1
+    except Exception as exc:
+        print(f"Сбой пайплайна: {exc}", flush=True)
+        return 1
+    for line in result.warnings:
+        print(line, flush=True)
+    print("Done", flush=True)
     return 0

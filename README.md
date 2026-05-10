@@ -16,6 +16,10 @@ develop/ARCHITECTURE.md
 
 ## Установка и запуск
 
+Входные таблицы по умолчанию читаются из **`data/raw/`** (имена: `train`, `reqlabor`, `sched`, `station_priorities`, `shifts`, `staff_limits` — расширение `.csv` или `.xlsx`). Другая папка: `python -m crocs --data-dir путь`.
+
+Результаты пайплайна — в **`artifacts/`**.
+
 ```powershell
 pip install -e ".[dev]"
 python -m scripts.run_pipeline
