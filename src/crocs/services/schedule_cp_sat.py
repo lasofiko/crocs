@@ -10,6 +10,7 @@ from ortools.sat.python import cp_model
 
 from crocs.domain.models import SchedulingInputs
 from crocs.exceptions import ScheduleError
+from crocs.services.labormap_service import effective_station_floor
 from crocs.services.minor_shift_limits import compute_staff_caps
 
 
@@ -243,9 +244,14 @@ def solve_schedule_cp_sat(inputs: SchedulingInputs) -> pd.DataFrame:
 
     days, hours, stations, demand_raw, day_ts = _demand_grid(inputs.hourly_demand)
     demand = demand_raw
+    relax = frozenset(inputs.min_employees_relaxed_sale_hours)
+    # Совпадает с apply_min_employees_per_station в пайплайне: на (день, час, станция) не меньше эффективного минимума.
     floor_n = inputs.min_employees_per_station
     if floor_n > 0:
-        demand = {k: max(int(v), floor_n) for k, v in demand.items()}
+        demand = {
+            k: max(int(v), effective_station_floor(floor_n, k[1], relax))
+            for k, v in demand.items()
+        }
     shift_pairs = _parse_shifts(inputs.shifts)
     week_cap, shift_cap = compute_staff_caps(inputs.staff_limits, pd.Timestamp(days[0]))
     windows = _sched_windows(inputs.sched)
@@ -375,10 +381,17 @@ def solve_schedule_cp_sat(inputs: SchedulingInputs) -> pd.DataFrame:
 
     status = solver.Solve(model)
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        raise ScheduleError(
-            "CP-SAT found no feasible schedule (check staffing, demand, sched windows). "
-            f"status={solver.StatusName(status)}",
+        msg = (
+            "CP-SAT: нет допустимого расписания (проверьте штат, спрос, окна в sched/shifts). "
+            f"status={solver.StatusName(status)}."
         )
+        if status == cp_model.INFEASIBLE:
+            msg += (
+                " Частая причина — scheduling.min_employees_per_station: 2 при недостатке людей "
+                "или узких окнах starttime/finishtime. Попробуйте "
+                "`--config configs/relaxed_scheduling.yaml` или ослабьте min_employees_per_station в YAML."
+            )
+        raise ScheduleError(msg)
 
     rows_out: list[dict[str, Any]] = []
     for i, opt in enumerate(options):

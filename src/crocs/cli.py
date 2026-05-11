@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from crocs.exceptions import ScheduleError
 from crocs.io.csv_repository import _load_table
 from crocs.services.pipeline_service import check_raw_present, run_pipeline
 
@@ -58,6 +59,23 @@ def main(argv: list[str] | None = None) -> int:
         print("OK")
         return 0
 
-    run_pipeline(args.data_dir, args.artifacts_dir, config_path=args.config)
+    try:
+        run_pipeline(args.data_dir, args.artifacts_dir, config_path=args.config)
+    except ScheduleError as exc:
+        msg = str(exc)
+        relaxed_cfg = Path("configs/relaxed_scheduling.yaml")
+        can_retry_relaxed = (
+            args.config is None
+            and relaxed_cfg.exists()
+            and ("INFEASIBLE" in msg or "недостижим" in msg.lower())
+        )
+        if can_retry_relaxed:
+            print(
+                "Расписание недостижимо на default-конфиге; повтор с configs/relaxed_scheduling.yaml…",
+                flush=True,
+            )
+            run_pipeline(args.data_dir, args.artifacts_dir, config_path=relaxed_cfg)
+        else:
+            raise
     print("Done")
     return 0

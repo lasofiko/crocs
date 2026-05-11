@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 FORECAST_START = date(2026, 4, 27)
@@ -49,8 +49,34 @@ class ForecastConfig(BaseModel):
 class SchedulingConfig(BaseModel):
     solver_time_limit_seconds: int | None = None
     max_extra_coverage: int = Field(default=2, ge=0)
-    min_employees_per_station: int = Field(default=2, ge=0)
+    min_employees_per_station: int = Field(
+        default=2,
+        ge=0,
+        description=(
+            "Нижняя граница числа людей на станции в каждом слоте (день, час, station_key) "
+            "на горизонте расписания; 0 — без принудительного минимума."
+        ),
+    )
+    min_employees_relaxed_sale_hours: list[int] = Field(
+        default_factory=list,
+        description=(
+            "Список sale_hour (0–23), где на станции достаточно минимум одного человека, "
+            "даже если min_employees_per_station > 1 (например поздний слот)."
+        ),
+    )
     max_shifts_per_employee_week: int = Field(default=5, ge=1, le=7)
+
+    @field_validator("min_employees_relaxed_sale_hours", mode="after")
+    @classmethod
+    def _normalize_relaxed_sale_hours(cls, v: list[int]) -> list[int]:
+        seen: set[int] = set()
+        out: list[int] = []
+        for x in v:
+            h = int(x)
+            if 0 <= h <= 23 and h not in seen:
+                seen.add(h)
+                out.append(h)
+        return sorted(out)
 
 
 class Settings(BaseSettings):

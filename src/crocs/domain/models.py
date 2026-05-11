@@ -35,7 +35,11 @@ class SchedulingInputs:
     shifts: pd.DataFrame
     staff_limits: pd.DataFrame
     max_extra_coverage: int = 2
+    # На каждой станции в каждом почасовом слоте горизонта — не меньше стольки человек одновременно
+    # (после порога из reqlabor/прогноза значение required_employees поднимается до этого минимума).
     min_employees_per_station: int = 2
+    # В эти sale_hour нижняя граница — 1 человек на станцию (см. configs scheduling.*).
+    min_employees_relaxed_sale_hours: tuple[int, ...] = ()
     # За плановую неделю (горизонт): каждый из sched — минимум одна смена, не больше max_shifts_per_employee_week.
     max_shifts_per_employee_week: int = 5
     restaurant_open_hour: int = 7

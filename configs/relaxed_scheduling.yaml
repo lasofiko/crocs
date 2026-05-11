@@ -1,0 +1,37 @@
+# Копия default.yaml с ослабленным минимумом людей на станцию.
+# Используйте, если CP-SAT возвращает INFEASIBLE на строгом default
+# (часто из‑за scheduling.min_employees_per_station: 2 при узких окнах sched).
+
+project:
+  name: crocs
+
+paths:
+  raw_data_dir: data/output
+  output_dir: data/output
+
+inputs:
+  train: train.csv
+  reqlabor: reqlabor.csv
+  sched: sched.csv
+  staff_limits: staff_limits.csv
+  station_priorities: station_priorities.csv
+  shifts: shifts.csv
+
+outputs:
+  forecast: forecast.xlsx
+  schedule: schedule.xlsx
+  labor_demand: labor_demand.xlsx
+  coverage_report: coverage_report.xlsx
+
+forecast:
+  start: 2026-04-27
+  end: 2026-05-03
+  open_hour: 7
+  close_hour: 23
+
+scheduling:
+  solver_time_limit_seconds: null
+  max_extra_coverage: 2
+  min_employees_per_station: 1
+  min_employees_relaxed_sale_hours: []
+  max_shifts_per_employee_week: 5

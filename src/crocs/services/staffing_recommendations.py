@@ -5,6 +5,7 @@ from typing import Any
 import pandas as pd
 
 from crocs.domain.models import SchedulingInputs
+from crocs.services.labormap_service import effective_station_floor
 from crocs.services.minor_shift_limits import compute_staff_caps
 from crocs.services.schedule_cp_sat import (
     _demand_grid,
@@ -64,11 +65,15 @@ def staffing_shortfall_hints(
     open_h = inputs.restaurant_open_hour
     close_h = inputs.restaurant_close_hour
     floor_n = inputs.min_employees_per_station
+    relax = frozenset(inputs.min_employees_relaxed_sale_hours)
 
     days, _hours, _stations, demand_raw, day_ts = _demand_grid(inputs.hourly_demand)
     demand = demand_raw
     if floor_n > 0:
-        demand = {k: max(int(v), floor_n) for k, v in demand.items()}
+        demand = {
+            k: max(int(v), effective_station_floor(floor_n, k[1], relax))
+            for k, v in demand.items()
+        }
 
     shift_pairs = _parse_shifts(inputs.shifts)
     _, shift_cap = compute_staff_caps(inputs.staff_limits, pd.Timestamp(days[0]))
