@@ -21,7 +21,9 @@ def _load_table(data_dir: Path, stem: str, *, sheet_name: int | str = 0) -> pd.D
 
 
 def load_raw_bundle(data_dir: Path) -> RawDataBundle:
-    weather = _load_table(data_dir, "weather_moscow")
+    weather = _load_table(data_dir, "weather_moscow_open_meteo_forecast")
+    if weather is None:
+        weather = _load_table(data_dir, "weather_moscow")
     if weather is None:
         weather = _load_table(data_dir, "weather")
     return RawDataBundle(

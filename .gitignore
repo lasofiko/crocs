@@ -13,6 +13,8 @@ build/
 .ruff_cache/
 .pyright/
 .mypy_cache/
+experiments/
+.claude/
 
 # IDE
 .idea/
@@ -21,7 +23,6 @@ build/
 # Raw case data
 data/raw/*.csv
 data/raw/*.xlsx
-
 # Generated data and artifacts
 data/interim/*
 data/processed/*

@@ -74,7 +74,9 @@ def run_pipeline(
             staff_limits=bundle.staff_limits,
             max_extra_coverage=settings.scheduling.max_extra_coverage,
             min_employees_per_station=settings.scheduling.min_employees_per_station,
-            min_employees_relaxed_sale_hours=tuple(settings.scheduling.min_employees_relaxed_sale_hours),
+            min_employees_relaxed_sale_hours=tuple(
+                settings.scheduling.min_employees_relaxed_sale_hours
+            ),
             max_shifts_per_employee_week=settings.scheduling.max_shifts_per_employee_week,
             require_one_shift_per_sched_employee=settings.scheduling.require_one_shift_per_sched_employee,
             restaurant_open_hour=settings.forecast.open_hour,
