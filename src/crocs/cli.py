@@ -63,7 +63,26 @@ def main(argv: list[str] | None = None) -> int:
     _configure_console_output()
     _configure_numeric_threads()
     p = argparse.ArgumentParser()
-    p.add_argument("--data-dir", type=Path, default=Path("data/raw"))
+    p.add_argument(
+        "--data-dir",
+        type=Path,
+        default=Path("data/raw"),
+        help="Каталог для ML и спроса: train, reqlabor, weather (по умолчанию data/raw).",
+    )
+    p.add_argument(
+        "--schedule-input-dir",
+        type=Path,
+        default=None,
+        help="Каталог для оптимизации: sched, station_priorities, shifts, staff_limits; "
+        "при forecast.guests_source=file — ещё и forecast.xlsx (по умолчанию paths.schedule_input_dir, часто data/output).",
+    )
+    p.add_argument(
+        "--guests-source",
+        choices=("model", "file"),
+        default=None,
+        help="Откуда брать почасовых гостей: model — CatBoost по train; file — готовый outputs.forecast из schedule_input_dir. "
+        "По умолчанию — из YAML (forecast.guests_source).",
+    )
     p.add_argument("--artifacts-dir", type=Path, default=Path("artifacts"))
     p.add_argument(
         "--config",
@@ -81,28 +100,73 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.check_only:
-        check_raw_present(args.data_dir)
+        check_raw_present(
+            args.data_dir,
+            args.schedule_input_dir,
+            config_path=args.config,
+            guests_source=args.guests_source,
+        )
         print("OK")
         return 0
 
     print(
-        "Пайплайн (прогноз + расписание): "
-        f"данные={args.data_dir.resolve()} -> артефакты={args.artifacts_dir.resolve()}",
+        "Пайплайн (спрос + расписание): "
+        f"raw={args.data_dir.resolve()}, schedule_input={args.schedule_input_dir or '(из YAML)'} "
+        f"-> артефакты={args.artifacts_dir.resolve()}",
         flush=True,
     )
 
     try:
-        result = run_pipeline(args.data_dir, args.artifacts_dir, config_path=args.config)
+        result = run_pipeline(
+            args.data_dir,
+            args.artifacts_dir,
+            config_path=args.config,
+            schedule_input_dir=args.schedule_input_dir,
+            guests_source=args.guests_source,
+        )
     except DataValidationError as exc:
         print(f"Ошибка входных данных: {exc}", flush=True)
         return 1
     except ScheduleError as exc:
         msg = str(exc)
+        infl = (
+            "INFEASIBLE" in msg
+            or "недостижим" in msg.lower()
+            or "UNKNOWN" in msg
+        )
+        result = None
+
+        cp_sat_cfg = Path("configs/cp_sat.yaml")
+        cp_sat_relaxed_cfg = Path("configs/cp_sat_relaxed.yaml")
+        if (
+            infl
+            and args.config is not None
+            and cp_sat_relaxed_cfg.is_file()
+            and args.config.resolve() == cp_sat_cfg.resolve()
+        ):
+            print(
+                "Расписание недостижимо на configs/cp_sat.yaml; "
+                "повтор с configs/cp_sat_relaxed.yaml…",
+                flush=True,
+            )
+            try:
+                result = run_pipeline(
+                    args.data_dir,
+                    args.artifacts_dir,
+                    config_path=cp_sat_relaxed_cfg,
+                    schedule_input_dir=args.schedule_input_dir,
+                    guests_source=args.guests_source,
+                )
+            except ScheduleError as exc_relaxed:
+                print(f"Ошибка расписания (cp_sat_relaxed): {exc_relaxed}", flush=True)
+                return 1
+
         relaxed_cfg = Path("configs/relaxed_scheduling.yaml")
         can_retry_relaxed = (
-            args.config is None
-            and relaxed_cfg.exists()
-            and ("INFEASIBLE" in msg or "недостижим" in msg.lower() or "UNKNOWN" in msg)
+            result is None
+            and infl
+            and args.config is None
+            and relaxed_cfg.is_file()
         )
         if can_retry_relaxed:
             print(
@@ -111,11 +175,17 @@ def main(argv: list[str] | None = None) -> int:
                 flush=True,
             )
             try:
-                result = run_pipeline(args.data_dir, args.artifacts_dir, config_path=relaxed_cfg)
+                result = run_pipeline(
+                    args.data_dir,
+                    args.artifacts_dir,
+                    config_path=relaxed_cfg,
+                    schedule_input_dir=args.schedule_input_dir,
+                    guests_source=args.guests_source,
+                )
             except Exception as relaxed_exc:
                 print(f"Ошибка после relaxed-конфига: {relaxed_exc}", flush=True)
                 return 1
-        else:
+        elif result is None:
             print(f"Ошибка расписания: {exc}", flush=True)
             return 1
     except Exception as exc:

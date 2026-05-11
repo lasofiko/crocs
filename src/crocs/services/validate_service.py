@@ -60,6 +60,9 @@ def validate_schedule(
     staff_limits: pd.DataFrame,
     sched: pd.DataFrame,
     shifts: pd.DataFrame | None = None,
+    *,
+    warn_unused_sched_roster: bool = True,
+    warn_less_than_two_days_off: bool = True,
 ) -> list[str]:
     bad: list[str] = []
 
@@ -148,9 +151,13 @@ def validate_schedule(
                     bad.append(f"сотрудник {emp}: работа в день недели {int(w)}, не разрешённом в sched")
 
         have = {_nid(x) for x in s["employee_id"].dropna().unique()}
-        for k in roster:
-            if k not in have:
-                bad.append(f"у сотрудника из sched (id={k}) нет ни одной смены — нужен минимум один рабочий день")
+        if warn_unused_sched_roster:
+            for k in roster:
+                if k not in have:
+                    bad.append(
+                        "у сотрудника из sched "
+                        f"(id={k}) нет ни одной смены — нужен минимум один рабочий день",
+                    )
 
     # Рабочие дни минимум 2 выходных и минимум 1 рабочий день
     h = pd.date_range(ds.min().normalize(), ds.max().normalize(), freq="D")
@@ -162,7 +169,7 @@ def validate_schedule(
         if len(days_work) < 1:
             bad.append(f"сотрудник {emp}: нет ни одного рабочего дня")
         off = len(set(h) - days_work)
-        if off < 2:
+        if warn_less_than_two_days_off and off < 2:
             bad.append(f"сотрудник {emp}: меньше двух выходных в неделе (выходных {off})")
 
     # Длительность каждой смены соответствует таблице приоритетов 1–4.

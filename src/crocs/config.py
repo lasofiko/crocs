@@ -4,6 +4,8 @@ from datetime import date
 from pathlib import Path
 from typing import Literal
 
+GuestsSource = Literal["model", "file"]
+
 import yaml
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -19,8 +21,11 @@ class ProjectConfig(BaseModel):
 
 
 class PathConfig(BaseModel):
+    # train, reqlabor, weather — для ML-прогноза и расчёта спроса.
     raw_data_dir: Path = Path("data/raw")
     output_dir: Path = Path("data/output")
+    # Только для оптимизации расписания: sched, station_priorities, shifts, staff_limits.
+    schedule_input_dir: Path = Path("data/output")
 
 
 class InputConfig(BaseModel):
@@ -37,6 +42,8 @@ class OutputConfig(BaseModel):
     schedule: str = "schedule.xlsx"
     labor_demand: str = "labor_demand.xlsx"
     coverage_report: str = "coverage_report.xlsx"
+    # Одна книга Excel: по листу на каждый день горизонта — таблица станции × часы (число людей).
+    schedule_staffing_by_hour: str = "schedule_staffing_by_hour.xlsx"
 
 
 class ForecastConfig(BaseModel):
@@ -45,11 +52,30 @@ class ForecastConfig(BaseModel):
     open_hour: int = Field(default=RESTAURANT_OPEN_HOUR, ge=0, le=23)
     # Час закрытия (верхняя граница по времени); слоты sale_hour = open … close−1 (полуинтервал).
     close_hour: int = Field(default=RESTAURANT_CLOSE_HOUR, ge=1, le=24)
+    guests_source: GuestsSource = Field(
+        default="model",
+        description=(
+            "model — обучить CatBoost и прогноз по train из raw_data_dir; "
+            "file — взять готовый прогноз из schedule_input_dir / outputs.forecast (без ML в пайплайне)."
+        ),
+    )
 
 
 class SchedulingConfig(BaseModel):
-    solver_time_limit_seconds: int | None = None
-    max_extra_coverage: int = Field(default=2, ge=0)
+    solver_time_limit_seconds: int = Field(
+        default=300,
+        ge=1,
+        le=86400,
+        description="Лимит секунд на MILP (PuLP/Pyomo) или CP-SAT (крупные модели часто нуждаются в сотнях секунд).",
+    )
+    max_extra_coverage: int = Field(
+        default=2,
+        ge=0,
+        description=(
+            "Верхняя граница покрытия слота (день, час, станция): назначено не больше req + max_extra_coverage "
+            "(req из спроса); параметр постановки MILP, не «максимум штата по ТЗ»."
+        ),
+    )
     min_employees_per_station: int = Field(
         default=2,
         ge=0,
@@ -73,13 +99,33 @@ class SchedulingConfig(BaseModel):
             "(при большом списке и малом спросе часто даёт INFEASIBLE)."
         ),
     )
-    schedule_engine: Literal["cp_sat", "pyomo"] = Field(
+    coverage_understaff_penalty: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Штраф за каждую недостающую единицу покрытия до целевого спроса на слот (день×час×станция). "
+            "0 — как раньше: нижняя граница покрытия жёстко равна спросу (required). "
+            ">0 — при положительном спросе жёстко минимум 1 человек на станции в слоте, до полного спроса "
+            "модель стремится за счёт этого штрафа (подберите вес больше типичной разницы коэффициентов смен)."
+        ),
+    )
+    schedule_engine: Literal["cp_sat", "pyomo", "pulp"] = Field(
         default="cp_sat",
-        description="Движок расписания: cp_sat (OR-Tools) или pyomo (MILP CBC/HiGHS).",
+        description="Движок расписания: cp_sat (OR-Tools), pyomo или pulp (MILP CBC/HiGHS).",
     )
     milp_solver: Literal["auto", "cbc", "highs"] = Field(
         default="auto",
         description="Для pyomo: какой MILP-солвер предпочесть (auto — HiGHS при наличии, иначе CBC).",
+    )
+    validation_warn_unused_sched_roster: bool = Field(
+        default=True,
+        description=(
+            "Предупреждать, если в sched есть сотрудник, но ему не назначили ни одной смены."
+        ),
+    )
+    validation_warn_less_than_two_days_off: bool = Field(
+        default=True,
+        description="Предупреждать, если у сотрудника за неделю меньше двух выходных дней.",
     )
 
     @field_validator("min_employees_relaxed_sale_hours", mode="after")

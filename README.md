@@ -6,7 +6,8 @@
 
 ```text
 scripts/run_pipeline.py    # python -m scripts.run_pipeline
-data/raw/                  # входные таблицы (см. data/raw/README.md)
+data/raw/                  # ML и спрос: train, reqlabor, weather
+data/output/               # только оптимизация расписания: sched, station_priorities, shifts, staff_limits
 artifacts/                 # forecast.xlsx, schedule.xlsx; подпапки figures/, demo/
 src/crocs/
   api/  domain/  io/  services/  ml/  cli.py  config.py
@@ -16,7 +17,8 @@ develop/ARCHITECTURE.md
 
 ## Установка и запуск
 
-Входные таблицы по умолчанию читаются из **`data/raw/`** (имена: `train`, `reqlabor`, `sched`, `station_priorities`, `shifts`, `staff_limits` — расширение `.csv` или `.xlsx`). Другая папка: `python -m crocs --data-dir путь`.
+- **ML и почасовой спрос:** **`data/raw/`** — `train`, `reqlabor`, опционально `weather` / `weather_moscow` (`.csv` или `.xlsx`). Другая папка: `--data-dir`.
+- **Только солвер расписания:** **`data/output/`** — `sched`, `station_priorities`, `shifts`, `staff_limits`. Другая папка: `--schedule-input-dir` или `paths.schedule_input_dir` в YAML.
 
 Результаты пайплайна — в **`artifacts/`**.
 

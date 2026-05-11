@@ -1,5 +1,4 @@
-# Запасной прогон при INFEASIBLE / таймауте с default (CLI подставляет автоматически).
-# Чуть больше времени солвера и запас по перекрытию слотов; ослабление «каждому из sched ≥ 1 смена».
+# Как configs/default.yaml, но расписание через CP-SAT (код в src/crocs/services/schedule_opt).
 
 project:
   name: crocs
@@ -31,13 +30,13 @@ forecast:
   guests_source: file
 
 scheduling:
-  schedule_engine: pulp
+  schedule_engine: cp_sat
   milp_solver: auto
-  solver_time_limit_seconds: 900
-  max_extra_coverage: 3
+  solver_time_limit_seconds: 300
+  max_extra_coverage: 2
   min_employees_per_station: 2
   min_employees_relaxed_sale_hours: []
-  max_shifts_per_employee_week: 6
-  require_one_shift_per_sched_employee: false
+  max_shifts_per_employee_week: 5
+  require_one_shift_per_sched_employee: true
   validation_warn_unused_sched_roster: true
   validation_warn_less_than_two_days_off: true

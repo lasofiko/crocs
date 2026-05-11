@@ -5,7 +5,7 @@ from typing import Any, Literal
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from crocs.viz.report_figures import staff_counts_per_slot
+from crocs.services.staffing_counts import staff_counts_per_slot
 
 _WEEKDAY_RU = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
 

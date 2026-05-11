@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from crocs.config import load_settings
+from crocs.config import GuestsSource, load_settings
 from crocs.services.pipeline_service import run_pipeline
 from crocs.services.staffing_dashboard import StaffingGridResponse, build_staffing_grid
 
@@ -42,22 +42,37 @@ def health() -> dict[str, str]:
 
 @app.get("/api/v1/staffing-grid", response_model=StaffingGridResponse)
 def get_staffing_grid(
-    data_dir: str = Query("data/raw", description="Каталог с входными CSV/XLSX"),
+    data_dir: str = Query("data/raw", description="Каталог для ML и спроса: train, reqlabor, weather"),
+    schedule_input_dir: str = Query(
+        "data/output",
+        description="Каталог: sched, station_priorities, shifts, staff_limits; при guests_source=file — ещё forecast.xlsx",
+    ),
     artifacts_dir: str = Query("artifacts", description="Каталог для сохранения артефактов прогона"),
     config: str | None = Query(
         None,
         description="YAML конфиг (по умолчанию configs/default.yaml относительно cwd)",
     ),
+    guests_source: GuestsSource | None = Query(
+        None,
+        description="Переопределить forecast.guests_source: file — forecast.xlsx в schedule_input_dir; model — train.",
+    ),
 ) -> StaffingGridResponse:
     """
-    Запускает полный пайплайн (прогноз + спрос + CP-SAT) и возвращает плоскую таблицу по
-    дате, часу и станции: гости, норматив, назначено, список сотрудников, индикатор покрытия.
+    Пайплайн спроса и расписания (по умолчанию прогноз гостей из forecast.xlsx в schedule_input_dir,
+    без переобучения; см. forecast.guests_source в YAML). Возвращает сетку по дате, часу и станции.
     """
     dd = _relative_path(data_dir)
+    sd = _relative_path(schedule_input_dir)
     ad = _relative_path(artifacts_dir)
     cfg_path = _relative_path(config) if config else None
     try:
-        result = run_pipeline(dd, ad, config_path=cfg_path)
+        result = run_pipeline(
+            dd,
+            ad,
+            config_path=cfg_path,
+            schedule_input_dir=sd,
+            guests_source=guests_source,
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

@@ -1,5 +1,5 @@
 .week-stations-board {
-    width: min(1100px, 100%);
+    width: min(1200px, 100%);
     margin: 0 auto;
 }
 
@@ -20,106 +20,168 @@
     color: rgb(50 40 35 / 75%);
 }
 
-.week-stations-board__grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 14px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-
-.week-stations-card {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 14px 16px;
+.week-stations-board__scene {
+    position: relative;
+    min-height: 420px;
     border-radius: 14px;
-    background: rgb(255 255 255 / 35%);
-    box-shadow:
-        0 4px 14px rgb(0 0 0 / 10%),
-        inset 0 0 0 1px rgb(255 255 255 / 40%);
+    background: rgb(255 255 255 / 10%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 20%);
+    overflow: hidden;
 }
 
-.week-stations-card--ok {
-    box-shadow:
-        0 4px 14px rgb(0 0 0 / 10%),
-        inset 0 0 0 2px rgb(34 160 80 / 45%);
+.station-node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 110px;
+    min-height: 92px;
+    z-index: 2;
 }
 
-.week-stations-card--warn {
-    box-shadow:
-        0 4px 14px rgb(0 0 0 / 10%),
-        inset 0 0 0 2px rgb(220 150 40 / 55%);
-}
-
-.week-stations-card--bad {
-    box-shadow:
-        0 4px 14px rgb(0 0 0 / 10%),
-        inset 0 0 0 2px rgb(220 60 50 / 55%);
-}
-
-.week-stations-card__title {
-    font-weight: 700;
-    font-size: 0.95rem;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: #2a1810;
-}
-
-.week-stations-card__counts {
-    font-size: 1.35rem;
-    font-weight: 700;
-    color: #1a120c;
-}
-
-.week-stations-card__actual {
-    color: #c41e1e;
-}
-
-.week-stations-card__sep {
-    margin: 0 2px;
-    color: rgb(0 0 0 / 35%);
-    font-weight: 500;
-}
-
-.week-stations-card__expected {
-    color: #2a1810;
-}
-
-.week-stations-card__hint {
-    font-size: 0.85rem;
-    font-weight: 500;
-    color: rgb(42 24 16 / 65%);
-}
-
-.week-stations-card__badge {
-    align-self: flex-start;
-    padding: 3px 10px;
+.station-node__counter {
+    position: absolute;
+    left: 22px;
+    top: 8px;
+    width: 66px;
+    height: 8px;
     border-radius: 999px;
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    background: linear-gradient(180deg, #6f4d3f, #4e342b);
+    box-shadow:
+        0 2px 6px rgb(0 0 0 / 28%),
+        inset 0 0 0 1px rgb(255 255 255 / 24%);
+    z-index: 5;
 }
 
-.week-stations-card__badge--ok {
-    background: rgb(34 160 80 / 18%);
+.station-node__title {
+    position: absolute;
+    top: -2px;
+    left: -6px;
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: #2a1810;
+    text-transform: uppercase;
+    z-index: 7;
+}
+
+.station-node__badge {
+    position: absolute;
+    right: 0;
+    top: 0;
+    transform: translate(var(--badge-dx, -6px), var(--badge-dy, -16px));
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+    z-index: 8;
+    box-shadow: 0 2px 5px rgb(0 0 0 / 20%);
+}
+
+.station-node__badge--ok {
+    background: rgb(34 160 80 / 22%);
     color: rgb(12 90 40);
 }
 
-.week-stations-card__badge--warn {
-    background: rgb(220 150 40 / 22%);
+.station-node__badge--warn {
+    background: rgb(220 150 40 / 28%);
     color: rgb(110 70 10);
 }
 
-.week-stations-card__badge--bad {
-    background: rgb(220 60 50 / 18%);
+.station-node__badge--bad {
+    background: rgb(220 60 50 / 24%);
     color: rgb(120 20 20);
 }
 
-.week-stations-card__ids {
-    font-size: 0.8rem;
-    line-height: 1.35;
-    color: rgb(40 30 25 / 78%);
-    word-break: break-word;
+.station-node__actual {
+    color: #b41515;
+}
+
+.station-node__sep {
+    opacity: 0.6;
+}
+
+.station-node__unit {
+    opacity: 0.75;
+}
+
+.station-node__status {
+    margin-left: 4px;
+    opacity: 0.85;
+}
+
+.station-node__ids {
+    position: absolute;
+    right: -12px;
+    top: 8px;
+    font-size: 0.58rem;
+    line-height: 1.15;
+    max-width: 88px;
+    color: rgb(40 30 25 / 72%);
+    text-align: right;
+    z-index: 7;
+}
+
+.station-node__walkers {
+    position: absolute;
+    left: 0;
+    top: 20px;
+    width: 100%;
+    height: 62px;
+    z-index: 3;
+    pointer-events: none;
+}
+
+.station-node::after {
+    content: '';
+    position: absolute;
+    left: -72px;
+    top: 52px;
+    width: 170px;
+    height: 10px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgb(120 90 72 / 24%), rgb(120 90 72 / 8%));
+    z-index: 1;
+}
+
+.station-node--ok .station-node__counter {
+    box-shadow:
+        0 2px 6px rgb(0 0 0 / 28%),
+        inset 0 0 0 1px rgb(255 255 255 / 24%),
+        0 0 0 2px rgb(34 160 80 / 28%);
+}
+
+.station-node--warn .station-node__counter {
+    box-shadow:
+        0 2px 6px rgb(0 0 0 / 28%),
+        inset 0 0 0 1px rgb(255 255 255 / 24%),
+        0 0 0 2px rgb(220 150 40 / 30%);
+}
+
+.station-node--bad .station-node__counter {
+    box-shadow:
+        0 2px 6px rgb(0 0 0 / 28%),
+        inset 0 0 0 1px rgb(255 255 255 / 24%),
+        0 0 0 2px rgb(220 60 50 / 30%);
+}
+
+@media (max-width: 960px) {
+    .week-stations-board__scene {
+        min-height: 360px;
+    }
+
+    .station-node {
+        width: 96px;
+    }
+
+    .station-node__badge {
+        right: -6px;
+    }
+
+    .station-node__ids {
+        max-width: 72px;
+    }
 }

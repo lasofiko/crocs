@@ -2,10 +2,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crocs.config import load_settings
+from crocs.config import GuestsSource, load_settings
 from crocs.domain.models import PipelineResult, SchedulingInputs
-from crocs.io.csv_repository import load_raw_bundle, require_bundle
-from crocs.io.excel_repository import write_forecast_xlsx, write_schedule_xlsx
+from crocs.io.csv_repository import (
+    load_raw_bundle,
+    load_schedule_optimization_tables,
+    require_ml_forecast_tables,
+    require_reqlabor_table,
+    require_schedule_optimization_tables,
+)
+from crocs.io.excel_repository import (
+    load_forecast_guests_xlsx,
+    write_forecast_xlsx,
+    write_schedule_staffing_by_hour_xlsx,
+    write_schedule_xlsx,
+)
 from crocs.services.forecast_service import run_forecast
 from crocs.services.labormap_service import apply_min_employees_per_station, build_hourly_demand
 from crocs.services.schedule_service import solve_schedule
@@ -17,8 +28,32 @@ def _stage(msg: str) -> None:
     print(msg, flush=True)
 
 
-def check_raw_present(data_dir: Path) -> None:
-    require_bundle(load_raw_bundle(data_dir))
+def check_raw_present(
+    data_dir: Path,
+    schedule_input_dir: Path | None = None,
+    *,
+    config_path: Path | None = None,
+    guests_source: GuestsSource | None = None,
+) -> None:
+    cfg = config_path if config_path is not None else Path("configs/default.yaml")
+    settings = load_settings(cfg)
+    sched_dir = schedule_input_dir if schedule_input_dir is not None else settings.paths.schedule_input_dir
+    src: GuestsSource = guests_source if guests_source is not None else settings.forecast.guests_source
+    bundle = load_raw_bundle(data_dir)
+    if src == "file":
+        require_reqlabor_table(bundle)
+        require_schedule_optimization_tables(sched_dir, fallback_dir=data_dir)
+        forecast_path = sched_dir / settings.outputs.forecast
+        load_forecast_guests_xlsx(
+            forecast_path,
+            start=settings.forecast.start,
+            end=settings.forecast.end,
+            open_hour=settings.forecast.open_hour,
+            close_hour=settings.forecast.close_hour,
+        )
+    else:
+        require_ml_forecast_tables(bundle)
+        require_schedule_optimization_tables(sched_dir, fallback_dir=data_dir)
 
 
 def run_pipeline(
@@ -27,24 +62,53 @@ def run_pipeline(
     *,
     strict_inputs: bool = True,
     config_path: Path | None = None,
+    schedule_input_dir: Path | None = None,
+    guests_source: GuestsSource | None = None,
 ) -> PipelineResult:
     cfg = config_path if config_path is not None else Path("configs/default.yaml")
     settings = load_settings(cfg)
-    bundle = load_raw_bundle(data_dir)
-    if strict_inputs:
-        require_bundle(bundle)
-    _stage("Входные таблицы загружены и проверены.")
+    sched_dir = schedule_input_dir if schedule_input_dir is not None else settings.paths.schedule_input_dir
+    src: GuestsSource = guests_source if guests_source is not None else settings.forecast.guests_source
 
-    assert bundle.train is not None
-    _stage("Прогноз гостей (LightGBM) - обычно самый долгий шаг...")
-    forecast_df = run_forecast(
-        bundle.train,
-        forecast_start=settings.forecast.start,
-        forecast_end=settings.forecast.end,
-        open_hour=settings.forecast.open_hour,
-        close_hour=settings.forecast.close_hour,
-        weather=bundle.weather,
+    bundle = load_raw_bundle(data_dir)
+    sched_df, sp_df, sh_df, sl_df = load_schedule_optimization_tables(
+        sched_dir,
+        fallback_dir=data_dir,
     )
+    if strict_inputs:
+        if src == "file":
+            require_reqlabor_table(bundle)
+            require_schedule_optimization_tables(sched_dir, fallback_dir=data_dir)
+        else:
+            require_ml_forecast_tables(bundle)
+            require_schedule_optimization_tables(sched_dir, fallback_dir=data_dir)
+    _stage(
+        "Входные таблицы загружены и проверены "
+        f"(спрос: raw_data_dir; прогноз гостей: {'файл в schedule_input_dir' if src == 'file' else 'модель по train'}; "
+        "расписание: сначала schedule_input_dir, при отсутствии файла — data_dir).",
+    )
+
+    if src == "file":
+        forecast_path = sched_dir / settings.outputs.forecast
+        _stage(f"Прогноз гостей из {forecast_path.resolve()} (без обучения модели)...")
+        forecast_df = load_forecast_guests_xlsx(
+            forecast_path,
+            start=settings.forecast.start,
+            end=settings.forecast.end,
+            open_hour=settings.forecast.open_hour,
+            close_hour=settings.forecast.close_hour,
+        )
+    else:
+        assert bundle.train is not None
+        _stage("Прогноз гостей (CatBoost по train) — обычно самый долгий шаг...")
+        forecast_df = run_forecast(
+            bundle.train,
+            forecast_start=settings.forecast.start,
+            forecast_end=settings.forecast.end,
+            open_hour=settings.forecast.open_hour,
+            close_hour=settings.forecast.close_hour,
+            weather=bundle.weather,
+        )
     _stage(f"Прогноз готов: {len(forecast_df)} строк.")
 
     assert bundle.reqlabor is not None
@@ -57,10 +121,10 @@ def run_pipeline(
         relaxed_sale_hours=relax_hours,
     )
 
-    assert bundle.sched is not None
-    assert bundle.station_priorities is not None
-    assert bundle.shifts is not None
-    assert bundle.staff_limits is not None
+    assert sched_df is not None
+    assert sp_df is not None
+    assert sh_df is not None
+    assert sl_df is not None
 
     _stage(
         f"Расписание ({settings.scheduling.schedule_engine}): подбор смен, может занять минуты...",
@@ -68,10 +132,10 @@ def run_pipeline(
     schedule_df = solve_schedule(
         SchedulingInputs(
             hourly_demand=demand_df,
-            sched=bundle.sched,
-            station_priorities=bundle.station_priorities,
-            shifts=bundle.shifts,
-            staff_limits=bundle.staff_limits,
+            sched=sched_df,
+            station_priorities=sp_df,
+            shifts=sh_df,
+            staff_limits=sl_df,
             max_extra_coverage=settings.scheduling.max_extra_coverage,
             min_employees_per_station=settings.scheduling.min_employees_per_station,
             min_employees_relaxed_sale_hours=tuple(settings.scheduling.min_employees_relaxed_sale_hours),
@@ -82,16 +146,34 @@ def run_pipeline(
             solver_time_limit_seconds=settings.scheduling.solver_time_limit_seconds,
             schedule_engine=settings.scheduling.schedule_engine,
             milp_solver=settings.scheduling.milp_solver,
+            coverage_understaff_penalty=settings.scheduling.coverage_understaff_penalty,
         )
     )
     _stage(f"Расписание построено: {len(schedule_df)} строк.")
 
-    warnings = validate_schedule(schedule_df, bundle.staff_limits, bundle.sched, bundle.shifts)
+    warnings = validate_schedule(
+        schedule_df,
+        sl_df,
+        sched_df,
+        sh_df,
+        warn_unused_sched_roster=settings.scheduling.validation_warn_unused_sched_roster,
+        warn_less_than_two_days_off=settings.scheduling.validation_warn_less_than_two_days_off,
+    )
 
     artifacts_dir.mkdir(parents=True, exist_ok=True)
-    _stage(f"Запись forecast.xlsx и schedule.xlsx в {artifacts_dir.resolve()}...")
-    write_forecast_xlsx(forecast_df, artifacts_dir / "forecast.xlsx")
-    write_schedule_xlsx(schedule_df, artifacts_dir / "schedule.xlsx")
+    _stage(
+        f"Запись forecast.xlsx, schedule.xlsx и {settings.outputs.schedule_staffing_by_hour} "
+        f"в {artifacts_dir.resolve()}...",
+    )
+    write_forecast_xlsx(forecast_df, artifacts_dir / settings.outputs.forecast)
+    write_schedule_xlsx(schedule_df, artifacts_dir / settings.outputs.schedule)
+    write_schedule_staffing_by_hour_xlsx(
+        schedule_df,
+        demand_df,
+        open_hour=settings.forecast.open_hour,
+        close_hour=settings.forecast.close_hour,
+        path=artifacts_dir / settings.outputs.schedule_staffing_by_hour,
+    )
 
     figures_dir = artifacts_dir / "figures"
     try:

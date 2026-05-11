@@ -46,11 +46,13 @@ class SchedulingInputs:
     max_shifts_per_employee_week: int = 5
     # Если true — у каждого из sched минимум одна смена за горизонт (см. scheduling.require_one_shift_per_sched_employee).
     require_one_shift_per_sched_employee: bool = True
+    # >0: при положительном спросе жёстко ≥1 человек на слот, до целевого req «дотягиваем» через штраф недобора в цели.
+    coverage_understaff_penalty: int = 0
     restaurant_open_hour: int = 7
     # Час закрытия; почасовой спрос использует sale_hour ∈ [open, close).
     restaurant_close_hour: int = 23
     solver_time_limit_seconds: float | None = None
-    # cp_sat — OR-Tools; pyomo — MILP (CBC/HiGHS через Pyomo).
+    # cp_sat — OR-Tools; pyomo/pulp — MILP (CBC/HiGHS).
     schedule_engine: str = "cp_sat"
-    # Для schedule_engine=pyomo: auto | cbc | highs
+    # Для schedule_engine=pyomo/pulp: auto | cbc | highs
     milp_solver: str = "auto"

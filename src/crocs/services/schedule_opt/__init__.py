@@ -1,6 +1,4 @@
-"""
-Обратная совместимость: постановка задачи перенесена в ``crocs.services.schedule_opt``.
-"""
+"""Назначение смен: общая постановка + солверы PuLP / Pyomo / CP-SAT."""
 
 from crocs.services.schedule_opt.build_problem import (
     ShiftAssignmentProblem,
@@ -14,11 +12,9 @@ from crocs.services.schedule_opt.build_problem import (
     sched_windows,
     station_penalties,
 )
-
-_demand_grid = demand_grid
-_nid = nid
-_parse_shifts = parse_shifts
-_sched_windows = sched_windows
+from crocs.services.schedule_opt.solve_cp_sat import solve_schedule_cp_sat
+from crocs.services.schedule_opt.solve_pulp import solve_schedule_pulp
+from crocs.services.schedule_opt.solve_pyomo import solve_schedule_pyomo
 
 __all__ = [
     "ShiftAssignmentProblem",
@@ -31,8 +27,7 @@ __all__ = [
     "parse_shifts",
     "sched_windows",
     "station_penalties",
-    "_demand_grid",
-    "_nid",
-    "_parse_shifts",
-    "_sched_windows",
+    "solve_schedule_cp_sat",
+    "solve_schedule_pulp",
+    "solve_schedule_pyomo",
 ]
