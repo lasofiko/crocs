@@ -1,0 +1,21 @@
+.animation {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    position: relative;
+    padding-top: 120px;
+    box-sizing: border-box;
+    isolation: isolate;
+}
+
+.animation .header {
+    z-index: 0;
+}
+
+.animation__stations {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 auto;
+    min-height: min(45vh, 420px);
+    padding: 0 48px 16px;
+}

@@ -82,14 +82,40 @@ def build_hourly_demand(forecast_guests: pd.DataFrame, reqlabor: pd.DataFrame) -
     return pd.DataFrame(out)
 
 
-def apply_min_employees_per_station(demand: pd.DataFrame, floor_n: int) -> pd.DataFrame:
+def effective_station_floor(floor_n: int, sale_hour: int, relaxed_sale_hours: frozenset[int]) -> int:
+    """Минимальное число людей на станции в слоте sale_hour с учётом relaxed-часов."""
+    if floor_n <= 0:
+        return 0
+    if int(sale_hour) in relaxed_sale_hours:
+        return 1
+    return floor_n
+
+
+def apply_min_employees_per_station(
+    demand: pd.DataFrame,
+    floor_n: int,
+    *,
+    relaxed_sale_hours: frozenset[int] | None = None,
+) -> pd.DataFrame:
+    """Поднимает required_employees до эффективного минимума в каждой строке (день, час, станция)."""
     if floor_n <= 0 or demand.empty:
         return demand
+    relax = relaxed_sale_hours or frozenset()
     out = demand.copy()
     cols = {str(c).strip().lower(): c for c in out.columns}
     req_col = cols.get("required_employees")
     if req_col is None:
         return out
     nums = pd.to_numeric(out[req_col], errors="coerce").fillna(0)
-    out[req_col] = nums.clip(lower=float(floor_n)).round().astype(int)
+    hour_col = cols.get("sale_hour")
+    if relax and hour_col is not None:
+        h = pd.to_numeric(out[hour_col], errors="coerce")
+        lower = h.map(
+            lambda x: float(effective_station_floor(floor_n, int(x), relax))
+            if pd.notna(x)
+            else float(floor_n),
+        )
+        out[req_col] = nums.clip(lower=lower).round().astype(int)
+    else:
+        out[req_col] = nums.clip(lower=float(floor_n)).round().astype(int)
     return out

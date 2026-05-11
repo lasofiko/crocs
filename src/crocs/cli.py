@@ -4,6 +4,11 @@ import argparse
 import os
 from pathlib import Path
 
+from crocs.exceptions import DataValidationError, ScheduleError
+from crocs.io.csv_repository import _load_table
+from crocs.services.pipeline_service import check_raw_present, run_pipeline
+
+
 def _configure_console_output() -> None:
     """Windows console safety: never fail on unsupported codepage chars."""
     import sys
@@ -29,8 +34,6 @@ def _configure_numeric_threads() -> None:
 
 
 def _convert_xlsx_to_csv(data_dir: Path) -> int:
-    from crocs.io.csv_repository import _load_table
-
     stems = (
         "train",
         "reqlabor",
@@ -45,7 +48,6 @@ def _convert_xlsx_to_csv(data_dir: Path) -> int:
         csv_path = data_dir / f"{stem}.csv"
         if not xlsx_path.exists():
             continue
-        # Do not overwrite an existing CSV without an explicit request.
         if csv_path.exists():
             continue
         df = _load_table(data_dir, stem)
@@ -79,8 +81,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.check_only:
-        from crocs.services.pipeline_service import check_raw_present
-
         check_raw_present(args.data_dir)
         print("OK")
         return 0
@@ -90,8 +90,6 @@ def main(argv: list[str] | None = None) -> int:
         f"данные={args.data_dir.resolve()} -> артефакты={args.artifacts_dir.resolve()}",
         flush=True,
     )
-    from crocs.exceptions import DataValidationError, ScheduleError
-    from crocs.services.pipeline_service import run_pipeline
 
     try:
         result = run_pipeline(args.data_dir, args.artifacts_dir, config_path=args.config)
@@ -101,16 +99,21 @@ def main(argv: list[str] | None = None) -> int:
     except ScheduleError as exc:
         msg = str(exc)
         relaxed_cfg = Path("configs/relaxed_scheduling.yaml")
-        can_retry_relaxed = args.config is None and relaxed_cfg.exists() and "INFEASIBLE" in msg
+        can_retry_relaxed = (
+            args.config is None
+            and relaxed_cfg.exists()
+            and ("INFEASIBLE" in msg or "недостижим" in msg.lower() or "UNKNOWN" in msg)
+        )
         if can_retry_relaxed:
             print(
-                "CP-SAT вернул INFEASIBLE на default-конфиге; пробую автоматически relaxed-конфиг...",
+                "Расписание недостижимо или не успело на default-конфиге; "
+                "повтор с configs/relaxed_scheduling.yaml…",
                 flush=True,
             )
             try:
                 result = run_pipeline(args.data_dir, args.artifacts_dir, config_path=relaxed_cfg)
             except Exception as relaxed_exc:
-                print(f"Ошибка расписания (после relaxed): {relaxed_exc}", flush=True)
+                print(f"Ошибка после relaxed-конфига: {relaxed_exc}", flush=True)
                 return 1
         else:
             print(f"Ошибка расписания: {exc}", flush=True)
@@ -118,6 +121,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(f"Сбой пайплайна: {exc}", flush=True)
         return 1
+
     for line in result.warnings:
         print(line, flush=True)
     print("Done", flush=True)

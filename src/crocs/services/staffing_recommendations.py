@@ -5,13 +5,9 @@ from typing import Any
 import pandas as pd
 
 from crocs.domain.models import SchedulingInputs
+from crocs.services.labormap_service import effective_station_floor
 from crocs.services.minor_shift_limits import compute_staff_caps
-from crocs.services.schedule_cp_sat import (
-    _demand_grid,
-    _nid,
-    _parse_shifts,
-    _sched_windows,
-)
+from crocs.services.schedule_shift_problem import demand_grid, nid, parse_shifts, sched_windows
 
 _WEEKDAY_RU = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
 
@@ -64,23 +60,27 @@ def staffing_shortfall_hints(
     open_h = inputs.restaurant_open_hour
     close_h = inputs.restaurant_close_hour
     floor_n = inputs.min_employees_per_station
+    relax = frozenset(inputs.min_employees_relaxed_sale_hours)
 
-    days, _hours, _stations, demand_raw, day_ts = _demand_grid(inputs.hourly_demand)
+    days, _hours, _stations, demand_raw, day_ts = demand_grid(inputs.hourly_demand)
     demand = demand_raw
     if floor_n > 0:
-        demand = {k: max(int(v), floor_n) for k, v in demand.items()}
+        demand = {
+            k: max(int(v), effective_station_floor(floor_n, k[1], relax))
+            for k, v in demand.items()
+        }
 
-    shift_pairs = _parse_shifts(inputs.shifts)
+    shift_pairs = parse_shifts(inputs.shifts)
     _, shift_cap = compute_staff_caps(inputs.staff_limits, pd.Timestamp(days[0]))
-    windows = _sched_windows(inputs.sched)
+    windows = sched_windows(inputs.sched)
 
     sched_df = inputs.sched.copy()
     sched_df.columns = [str(c).strip().lower() for c in sched_df.columns]
     ecol = next(c for c in sched_df.columns if c in ("employee_id", "staff_id", "emp_id"))
-    roster_keys = sorted({_nid(x) for x in sched_df[ecol].dropna()}, key=lambda x: x)
+    roster_keys = sorted({nid(x) for x in sched_df[ecol].dropna()}, key=lambda x: x)
     roster_display: dict[str, Any] = {}
     for _, row in sched_df.iterrows():
-        ek = _nid(row[ecol])
+        ek = nid(row[ecol])
         if ek and ek not in roster_display:
             roster_display[ek] = row[ecol]
 

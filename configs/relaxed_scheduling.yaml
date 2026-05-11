@@ -1,4 +1,7 @@
-# Более мягкие ограничения + дольше CP-SAT, если default.yaml даёт INFEASIBLE/UNKNOWN.
+# Ослабления для CP-SAT при INFEASIBLE/UNKNOWN на default:
+# — min_employees_per_station: 1;
+# — require_one_shift_per_sched_employee: false (не все из sched обязаны выйти на смену);
+# — больше времени солвера и запас по max_extra_coverage / max_shifts.
 # Запуск: python -m crocs --config configs/relaxed_scheduling.yaml
 
 project:
@@ -32,4 +35,6 @@ scheduling:
   solver_time_limit_seconds: 1800
   max_extra_coverage: 3
   min_employees_per_station: 1
+  min_employees_relaxed_sale_hours: []
   max_shifts_per_employee_week: 6
+  require_one_shift_per_sched_employee: false

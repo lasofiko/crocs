@@ -50,9 +50,11 @@ def run_pipeline(
     assert bundle.reqlabor is not None
     _stage("Потребность в персонале по часам и станциям...")
     demand_df = build_hourly_demand(forecast_df, bundle.reqlabor)
+    relax_hours = frozenset(settings.scheduling.min_employees_relaxed_sale_hours)
     demand_df = apply_min_employees_per_station(
         demand_df,
         settings.scheduling.min_employees_per_station,
+        relaxed_sale_hours=relax_hours,
     )
 
     assert bundle.sched is not None
@@ -60,7 +62,9 @@ def run_pipeline(
     assert bundle.shifts is not None
     assert bundle.staff_limits is not None
 
-    _stage("Расписание (CP-SAT): подбор смен, может занять минуты...")
+    _stage(
+        f"Расписание ({settings.scheduling.schedule_engine}): подбор смен, может занять минуты...",
+    )
     schedule_df = solve_schedule(
         SchedulingInputs(
             hourly_demand=demand_df,
@@ -70,10 +74,14 @@ def run_pipeline(
             staff_limits=bundle.staff_limits,
             max_extra_coverage=settings.scheduling.max_extra_coverage,
             min_employees_per_station=settings.scheduling.min_employees_per_station,
+            min_employees_relaxed_sale_hours=tuple(settings.scheduling.min_employees_relaxed_sale_hours),
             max_shifts_per_employee_week=settings.scheduling.max_shifts_per_employee_week,
+            require_one_shift_per_sched_employee=settings.scheduling.require_one_shift_per_sched_employee,
             restaurant_open_hour=settings.forecast.open_hour,
             restaurant_close_hour=settings.forecast.close_hour,
             solver_time_limit_seconds=settings.scheduling.solver_time_limit_seconds,
+            schedule_engine=settings.scheduling.schedule_engine,
+            milp_solver=settings.scheduling.milp_solver,
         )
     )
     _stage(f"Расписание построено: {len(schedule_df)} строк.")
@@ -99,4 +107,9 @@ def run_pipeline(
     except Exception as exc:
         warnings.append(f"графики не сохранены: {exc}")
 
-    return PipelineResult(forecast=forecast_df, schedule=schedule_df, warnings=warnings)
+    return PipelineResult(
+        forecast=forecast_df,
+        schedule=schedule_df,
+        labor_demand=demand_df,
+        warnings=warnings,
+    )
