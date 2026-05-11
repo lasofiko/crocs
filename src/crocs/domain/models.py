@@ -13,6 +13,7 @@ COVERAGE_REPORT_COLUMNS = ("ds", "station_key", "employee_id", "issue_type", "de
 @dataclass
 class RawDataBundle:
     train: pd.DataFrame | None
+    weather: pd.DataFrame | None
     reqlabor: pd.DataFrame | None
     sched: pd.DataFrame | None
     station_priorities: pd.DataFrame | None
@@ -40,8 +41,10 @@ class SchedulingInputs:
     min_employees_per_station: int = 2
     # В эти sale_hour нижняя граница — 1 человек на станцию (см. configs scheduling.*).
     min_employees_relaxed_sale_hours: tuple[int, ...] = ()
-    # За плановую неделю (горизонт): каждый из sched — минимум одна смена, не больше max_shifts_per_employee_week.
+    # За плановую неделю (горизонт): не больше max_shifts_per_employee_week смен на человека.
     max_shifts_per_employee_week: int = 5
+    # Если true — у каждого из sched минимум одна смена за горизонт (см. scheduling.require_one_shift_per_sched_employee).
+    require_one_shift_per_sched_employee: bool = True
     restaurant_open_hour: int = 7
     # Час закрытия; почасовой спрос использует sale_hour ∈ [open, close).
     restaurant_close_hour: int = 23

@@ -13,6 +13,10 @@ from crocs.services.validate_service import validate_schedule
 from crocs.viz.report_figures import write_pipeline_figures
 
 
+def _stage(msg: str) -> None:
+    print(msg, flush=True)
+
+
 def check_raw_present(data_dir: Path) -> None:
     require_bundle(load_raw_bundle(data_dir))
 
@@ -29,17 +33,22 @@ def run_pipeline(
     bundle = load_raw_bundle(data_dir)
     if strict_inputs:
         require_bundle(bundle)
+    _stage("Входные таблицы загружены и проверены.")
 
     assert bundle.train is not None
+    _stage("Прогноз гостей (LightGBM) - обычно самый долгий шаг...")
     forecast_df = run_forecast(
         bundle.train,
         forecast_start=settings.forecast.start,
         forecast_end=settings.forecast.end,
         open_hour=settings.forecast.open_hour,
         close_hour=settings.forecast.close_hour,
+        weather=bundle.weather,
     )
+    _stage(f"Прогноз готов: {len(forecast_df)} строк.")
 
     assert bundle.reqlabor is not None
+    _stage("Потребность в персонале по часам и станциям...")
     demand_df = build_hourly_demand(forecast_df, bundle.reqlabor)
     relax_hours = frozenset(settings.scheduling.min_employees_relaxed_sale_hours)
     demand_df = apply_min_employees_per_station(
@@ -53,6 +62,7 @@ def run_pipeline(
     assert bundle.shifts is not None
     assert bundle.staff_limits is not None
 
+    _stage("Расписание (CP-SAT): подбор смен, может занять минуты...")
     schedule_df = solve_schedule(
         SchedulingInputs(
             hourly_demand=demand_df,
@@ -64,20 +74,24 @@ def run_pipeline(
             min_employees_per_station=settings.scheduling.min_employees_per_station,
             min_employees_relaxed_sale_hours=tuple(settings.scheduling.min_employees_relaxed_sale_hours),
             max_shifts_per_employee_week=settings.scheduling.max_shifts_per_employee_week,
+            require_one_shift_per_sched_employee=settings.scheduling.require_one_shift_per_sched_employee,
             restaurant_open_hour=settings.forecast.open_hour,
             restaurant_close_hour=settings.forecast.close_hour,
             solver_time_limit_seconds=settings.scheduling.solver_time_limit_seconds,
         )
     )
+    _stage(f"Расписание построено: {len(schedule_df)} строк.")
 
     warnings = validate_schedule(schedule_df, bundle.staff_limits, bundle.sched, bundle.shifts)
 
     artifacts_dir.mkdir(parents=True, exist_ok=True)
+    _stage(f"Запись forecast.xlsx и schedule.xlsx в {artifacts_dir.resolve()}...")
     write_forecast_xlsx(forecast_df, artifacts_dir / "forecast.xlsx")
     write_schedule_xlsx(schedule_df, artifacts_dir / "schedule.xlsx")
 
     figures_dir = artifacts_dir / "figures"
     try:
+        _stage("Графики отчета...")
         write_pipeline_figures(
             forecast_df,
             schedule_df,

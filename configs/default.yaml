@@ -2,7 +2,7 @@ project:
   name: crocs
 
 paths:
-  raw_data_dir: data/output
+  raw_data_dir: data/raw
   output_dir: data/output
 
 inputs:
@@ -26,7 +26,8 @@ forecast:
   close_hour: 23
 
 scheduling:
-  solver_time_limit_seconds: null
+  # null — в коде подставится 300 с. Для ~50k+ переменных чаще нужен 1200+ или configs/relaxed_scheduling.yaml
+  solver_time_limit_seconds: 1200
   max_extra_coverage: 2
   # Минимум сотрудников на каждой станции в каждом почасовом слоте горизонта прогноза
   # (день × час × station_key): значение из reqlabor не может быть ниже этого порога.
@@ -35,3 +36,4 @@ scheduling:
   # В перечисленные sale_hour достаточно одного человека на станцию (например 23:00).
   min_employees_relaxed_sale_hours: [23]
   max_shifts_per_employee_week: 5
+  require_one_shift_per_sched_employee: true

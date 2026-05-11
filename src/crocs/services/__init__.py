@@ -1,3 +1,6 @@
-from crocs.services.pipeline_service import check_raw_present, run_pipeline
+"""Service package exports no heavy imports by default.
 
-__all__ = ["check_raw_present", "run_pipeline"]
+Import concrete modules directly, e.g. `crocs.services.pipeline_service`.
+"""
+
+__all__: list[str] = []

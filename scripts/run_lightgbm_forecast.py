@@ -1,3 +1,5 @@
+# ruff: noqa: B008
+
 from __future__ import annotations
 
 from datetime import date
@@ -12,8 +14,8 @@ from rich.table import Table
 from crocs.config import RESTAURANT_CLOSE_HOUR, RESTAURANT_OPEN_HOUR
 from crocs.io.csv_repository import _load_table
 from crocs.ml.baseline import calculate_forecast_metrics
-from crocs.ml.features import build_supervised_frame
-from crocs.ml.lightgbm_model import train_lightgbm
+from crocs.ml.ensemble_model import train_forecast_ensemble
+from crocs.ml.features import MODEL_TRAIN_START, build_supervised_frame
 from crocs.ml.lightgbm_pipeline import recursive_forecast, run_lightgbm_forecast
 
 app = typer.Typer(no_args_is_help=False)
@@ -26,26 +28,31 @@ def main(
         Path("data/output"),
         "--data-dir",
         "-d",
-        help="Папка с train.csv или train.xlsx (как у python -m crocs).",
+        help="Directory with train.csv or train.xlsx.",
     ),
     output_dir: Path = typer.Option(
         Path("data/output"),
         "--output-dir",
         "-o",
-        help="Куда сохранять прогноз и метрики.",
+        help="Directory for forecast, hold-out metrics, and CV metrics.",
     ),
     start: str = "2026-04-27",
     end: str = "2026-05-03",
     validation_start: str = "2026-03-01",
     train_start: str | None = None,
+    cv_folds: int = 4,
+    seasonal_cv_folds: int = 4,
     open_hour: int = RESTAURANT_OPEN_HOUR,
     close_hour: int = RESTAURANT_CLOSE_HOUR,
 ) -> None:
     train = _load_table(data_dir, "train")
     if train is None:
         raise FileNotFoundError(
-            f"Нет train: положите train.csv или train.xlsx в {data_dir.resolve()}"
+            f"No train file found: put train.csv or train.xlsx into {data_dir.resolve()}"
         )
+    weather = _load_table(data_dir, "weather_moscow")
+    if weather is None:
+        weather = _load_table(data_dir, "weather")
     forecast_start = date.fromisoformat(start)
     forecast_end = date.fromisoformat(end)
     validation_start_date = date.fromisoformat(validation_start)
@@ -59,8 +66,57 @@ def main(
         validation_start_date,
         train_start_date,
         hours=hours,
+        weather=weather,
     )
     _print_metrics(metrics)
+
+    console.print()
+    console.print("[bold]Rolling CV metrics[/bold]")
+    rolling_cv_metrics = _cross_validate_lightgbm(
+        train,
+        train_start_date,
+        hours=hours,
+        folds=cv_folds,
+        weather=weather,
+    )
+    if rolling_cv_metrics.empty:
+        console.print("[yellow]Not enough history for rolling CV.[/yellow]")
+    else:
+        console.print(rolling_cv_metrics.to_string(index=False))
+        _print_cv_mean("Rolling CV mean", rolling_cv_metrics)
+
+    console.print()
+    console.print("[bold]Seasonal CV metrics[/bold]")
+    seasonal_cv_metrics = _seasonal_cross_validate_lightgbm(
+        train,
+        train_start_date,
+        hours=hours,
+        folds=seasonal_cv_folds,
+        weather=weather,
+    )
+    if seasonal_cv_metrics.empty:
+        console.print("[yellow]Not enough history for seasonal CV.[/yellow]")
+    else:
+        console.print(seasonal_cv_metrics.to_string(index=False))
+        _print_cv_mean("Seasonal CV mean", seasonal_cv_metrics)
+
+    cv_metrics = pd.concat(
+        [rolling_cv_metrics, seasonal_cv_metrics],
+        ignore_index=True,
+    )
+    if not cv_metrics.empty:
+        console.print()
+        console.print("[bold]CV mean by type[/bold]")
+        grouped = (
+            cv_metrics.groupby("cv_type", as_index=False)
+            .agg(
+                mae=("mae", "mean"),
+                rmse=("rmse", "mean"),
+                wape=("wape", "mean"),
+                rows=("rows", "sum"),
+            )
+        )
+        console.print(grouped.to_string(index=False))
 
     train_for_final = _filter_by_train_start(train, train_start_date)
     forecast = run_lightgbm_forecast(
@@ -69,19 +125,22 @@ def main(
         forecast_end=forecast_end,
         open_hour=open_hour,
         close_hour=close_hour,
+        weather=weather,
     )
 
     console.print()
     console.print("[bold]Forecast summary[/bold]")
     _print_forecast_summary(forecast)
 
-    forecast_path, metrics_path = _next_output_paths(output_dir)
+    forecast_path, metrics_path, cv_metrics_path = _next_output_paths(output_dir)
     forecast.to_excel(forecast_path, index=False, engine="openpyxl")
     pd.DataFrame([metrics]).to_csv(metrics_path, index=False)
+    cv_metrics.to_csv(cv_metrics_path, index=False)
 
     console.print()
     console.print(f"[green]Saved forecast:[/green] {forecast_path}")
     console.print(f"[green]Saved metrics:[/green] {metrics_path}")
+    console.print(f"[green]Saved CV metrics:[/green] {cv_metrics_path}")
 
 
 def _resolve_train_validation_split(
@@ -104,17 +163,16 @@ def _resolve_train_validation_split(
     days = sorted(norm.unique())
     if len(days) < 2:
         raise ValueError(
-            "В train нужно минимум два разных календарных дня, чтобы посчитать "
-            "метрики на hold-out. Расширьте историю или задайте --validation-start "
-            "раньше минимальной даты в данных."
+            "Train needs at least two different calendar days to calculate hold-out "
+            "metrics. Extend history or set --validation-start before the first date."
         )
 
     split_ts = cast(pd.Timestamp, days[-1])
     train_part = cast(pd.DataFrame, prepared[norm < split_ts])
     actual_part = cast(pd.DataFrame, prepared[norm >= split_ts])
     console.print(
-        "[yellow]Все даты в train позже --validation-start; "
-        f"hold-out отнесён к последнему дню в данных ({split_ts.date()}).[/yellow]"
+        "[yellow]All train dates are after --validation-start; "
+        f"hold-out moved to the last data day ({split_ts.date()}).[/yellow]"
     )
     return train_part, actual_part, split_ts
 
@@ -125,6 +183,7 @@ def _validate_lightgbm(
     train_start: date | None,
     *,
     hours: tuple[int, ...],
+    weather: pd.DataFrame | None,
 ) -> dict[str, float]:
     prepared = train.copy()
     prepared["sale_date"] = pd.to_datetime(prepared["sale_date"], errors="raise")
@@ -132,16 +191,190 @@ def _validate_lightgbm(
 
     train_part, actual_part, _ = _resolve_train_validation_split(prepared, validation_start)
 
-    train_frame = build_supervised_frame(train_part, hours=hours)
-    model = train_lightgbm(train_frame)
+    train_frame = build_supervised_frame(train_part, hours=hours, weather=weather)
+    model = train_forecast_ensemble(train_frame)
 
     validation_calendar = cast(pd.DataFrame, actual_part[["sale_date", "sale_hour"]].copy())
-    predicted = recursive_forecast(model, train_part, validation_calendar)
+    predicted = recursive_forecast(model, train_part, validation_calendar, weather=weather)
 
     actual = cast(pd.DataFrame, actual_part[["sale_date", "sale_hour", "guests_count"]].copy())
     sale_date = cast(pd.Series, actual["sale_date"])
     actual["sale_date"] = sale_date.dt.date
     return calculate_forecast_metrics(actual, predicted)
+
+
+def _cross_validate_lightgbm(
+    train: pd.DataFrame,
+    train_start: date | None,
+    *,
+    hours: tuple[int, ...],
+    folds: int,
+    weather: pd.DataFrame | None,
+) -> pd.DataFrame:
+    prepared = train.copy()
+    prepared["sale_date"] = pd.to_datetime(prepared["sale_date"], errors="raise")
+    prepared = _filter_by_train_start(prepared, train_start)
+    prepared = prepared[prepared["sale_date"] >= MODEL_TRAIN_START]
+    if prepared.empty or folds <= 0:
+        return pd.DataFrame()
+
+    days = sorted(prepared["sale_date"].dt.normalize().unique())
+    rows: list[dict[str, float | int | str]] = []
+
+    for fold_index in range(folds, 0, -1):
+        val_end = cast(pd.Timestamp, days[-1]) - pd.Timedelta(days=7 * (fold_index - 1))
+        val_start = val_end - pd.Timedelta(days=6)
+        train_part = cast(pd.DataFrame, prepared[prepared["sale_date"] < val_start])
+        actual_part = cast(
+            pd.DataFrame,
+            prepared[prepared["sale_date"].between(val_start, val_end)],
+        )
+        if train_part.empty or actual_part.empty:
+            continue
+
+        train_frame = build_supervised_frame(train_part, hours=hours, weather=weather)
+        if train_frame.empty:
+            continue
+        model = train_forecast_ensemble(train_frame)
+        validation_calendar = cast(pd.DataFrame, actual_part[["sale_date", "sale_hour"]].copy())
+        predicted = recursive_forecast(model, train_part, validation_calendar, weather=weather)
+
+        actual = cast(pd.DataFrame, actual_part[["sale_date", "sale_hour", "guests_count"]].copy())
+        sale_date = cast(pd.Series, actual["sale_date"])
+        actual["sale_date"] = sale_date.dt.date
+        metrics = calculate_forecast_metrics(actual, predicted)
+        rows.append(
+            {
+                "cv_type": "rolling",
+                "fold": folds - fold_index + 1,
+                "validation_start": str(val_start.date()),
+                "validation_end": str(val_end.date()),
+                "quarter": int(val_start.quarter),
+                "month": int(val_start.month),
+                **metrics,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def _seasonal_cross_validate_lightgbm(
+    train: pd.DataFrame,
+    train_start: date | None,
+    *,
+    hours: tuple[int, ...],
+    folds: int,
+    weather: pd.DataFrame | None,
+) -> pd.DataFrame:
+    prepared = train.copy()
+    prepared["sale_date"] = pd.to_datetime(prepared["sale_date"], errors="raise")
+    prepared = _filter_by_train_start(prepared, train_start)
+    prepared = prepared[prepared["sale_date"] >= MODEL_TRAIN_START]
+    if prepared.empty or folds <= 0:
+        return pd.DataFrame()
+
+    days = pd.Series(sorted(prepared["sale_date"].dt.normalize().unique()))
+    min_train_days = 90
+    validation_days = 7
+    candidate_rows: list[dict[str, object]] = []
+
+    for (_, quarter), quarter_days in days.groupby([days.dt.year, days.dt.quarter]):
+        if len(quarter_days) < validation_days:
+            continue
+        middle_index = len(quarter_days) // 2
+        val_start = cast(pd.Timestamp, quarter_days.iloc[middle_index])
+        val_end = val_start + pd.Timedelta(days=validation_days - 1)
+        if val_end > cast(pd.Timestamp, days.iloc[-1]):
+            continue
+        train_part = cast(pd.DataFrame, prepared[prepared["sale_date"] < val_start])
+        actual_part = cast(
+            pd.DataFrame,
+            prepared[prepared["sale_date"].between(val_start, val_end)],
+        )
+        if actual_part["sale_date"].dt.normalize().nunique() < validation_days:
+            continue
+        if train_part["sale_date"].dt.normalize().nunique() < min_train_days:
+            continue
+        candidate_rows.append(
+            {
+                "quarter": int(quarter),
+                "validation_start": val_start,
+                "validation_end": val_end,
+                "train_part": train_part,
+                "actual_part": actual_part,
+            }
+        )
+
+    selected = _select_seasonal_windows(candidate_rows, folds=folds)
+    rows: list[dict[str, float | int | str]] = []
+    for fold_index, item in enumerate(selected, start=1):
+        train_part = cast(pd.DataFrame, item["train_part"])
+        actual_part = cast(pd.DataFrame, item["actual_part"])
+        val_start = cast(pd.Timestamp, item["validation_start"])
+        val_end = cast(pd.Timestamp, item["validation_end"])
+
+        train_frame = build_supervised_frame(train_part, hours=hours, weather=weather)
+        if train_frame.empty:
+            continue
+        model = train_forecast_ensemble(train_frame)
+        validation_calendar = cast(pd.DataFrame, actual_part[["sale_date", "sale_hour"]].copy())
+        predicted = recursive_forecast(model, train_part, validation_calendar, weather=weather)
+
+        actual = cast(pd.DataFrame, actual_part[["sale_date", "sale_hour", "guests_count"]].copy())
+        sale_date = cast(pd.Series, actual["sale_date"])
+        actual["sale_date"] = sale_date.dt.date
+        metrics = calculate_forecast_metrics(actual, predicted)
+        rows.append(
+            {
+                "cv_type": "seasonal",
+                "fold": fold_index,
+                "validation_start": str(val_start.date()),
+                "validation_end": str(val_end.date()),
+                "quarter": int(item["quarter"]),
+                "month": int(val_start.month),
+                **metrics,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def _select_seasonal_windows(
+    candidate_rows: list[dict[str, object]],
+    *,
+    folds: int,
+) -> list[dict[str, object]]:
+    if not candidate_rows:
+        return []
+
+    candidates = sorted(
+        candidate_rows,
+        key=lambda item: cast(pd.Timestamp, item["validation_start"]),
+        reverse=True,
+    )
+    selected: list[dict[str, object]] = []
+    used_quarters: set[int] = set()
+
+    for item in candidates:
+        quarter = int(item["quarter"])
+        if quarter in used_quarters:
+            continue
+        selected.append(item)
+        used_quarters.add(quarter)
+        if len(selected) == folds:
+            break
+
+    if len(selected) < folds:
+        selected_keys = {cast(pd.Timestamp, item["validation_start"]) for item in selected}
+        for item in candidates:
+            key = cast(pd.Timestamp, item["validation_start"])
+            if key in selected_keys:
+                continue
+            selected.append(item)
+            if len(selected) == folds:
+                break
+
+    return sorted(selected, key=lambda item: cast(pd.Timestamp, item["validation_start"]))
 
 
 def _filter_by_train_start(train: pd.DataFrame, train_start: date | None) -> pd.DataFrame:
@@ -181,14 +414,32 @@ def _print_metrics(metrics: dict[str, float]) -> None:
     console.print(table)
 
 
-def _next_output_paths(output_dir: Path) -> tuple[Path, Path]:
+def _print_cv_mean(title: str, metrics: pd.DataFrame) -> None:
+    console.print()
+    console.print(f"[bold]{title}[/bold]")
+    _print_metrics(
+        {
+            "mae": float(metrics["mae"].mean()),
+            "rmse": float(metrics["rmse"].mean()),
+            "wape": float(metrics["wape"].mean()),
+            "rows": float(metrics["rows"].sum()),
+        }
+    )
+
+
+def _next_output_paths(output_dir: Path) -> tuple[Path, Path, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     index = 1
     while True:
         forecast_path = output_dir / f"lightgbm_forecast{index}.xlsx"
         metrics_path = output_dir / f"lightgbm_forecast{index}_metrics.csv"
-        if not forecast_path.exists() and not metrics_path.exists():
-            return forecast_path, metrics_path
+        cv_metrics_path = output_dir / f"lightgbm_forecast{index}_cv_metrics.csv"
+        if (
+            not forecast_path.exists()
+            and not metrics_path.exists()
+            and not cv_metrics_path.exists()
+        ):
+            return forecast_path, metrics_path, cv_metrics_path
         index += 1
 
 

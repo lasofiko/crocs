@@ -18,7 +18,7 @@ class ProjectConfig(BaseModel):
 
 
 class PathConfig(BaseModel):
-    raw_data_dir: Path = Path("data/output")
+    raw_data_dir: Path = Path("data/raw")
     output_dir: Path = Path("data/output")
 
 
@@ -65,6 +65,13 @@ class SchedulingConfig(BaseModel):
         ),
     )
     max_shifts_per_employee_week: int = Field(default=5, ge=1, le=7)
+    require_one_shift_per_sched_employee: bool = Field(
+        default=True,
+        description=(
+            "Если true — у каждого человека из sched.csv минимум одна смена за горизонт недели "
+            "(при большом списке и малом спросе часто даёт INFEASIBLE)."
+        ),
+    )
 
     @field_validator("min_employees_relaxed_sale_hours", mode="after")
     @classmethod
