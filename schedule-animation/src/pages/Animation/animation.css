@@ -1,0 +1,33 @@
+.animation {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    position: relative;
+    padding-top: 120px;
+    box-sizing: border-box;
+    isolation: isolate;
+}
+
+.animation .header {
+    z-index: 0;
+}
+
+.animation__stations {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 auto;
+    min-height: min(45vh, 420px);
+    padding: 0 48px 16px;
+}
+
+.animation__fetch-hint {
+    max-width: min(900px, 100%);
+    margin: 0 auto 14px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 0.92rem;
+    line-height: 1.45;
+    color: rgb(90 40 30);
+    background: rgb(255 220 200 / 55%);
+    box-shadow: inset 0 0 0 1px rgb(200 80 60 / 25%);
+}
