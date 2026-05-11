@@ -11,7 +11,7 @@ pytest.importorskip("pyomo", reason="pyomo not installed")
 import pyomo.environ as pe
 
 from crocs.services.schedule_pyomo import solve_schedule_pyomo
-from tests.test_schedule_cp_sat import _minimal_feasible_inputs
+from test_schedule_cp_sat import _minimal_feasible_inputs
 
 
 def _any_milp_solver() -> bool:

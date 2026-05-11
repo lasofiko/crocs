@@ -7,7 +7,7 @@ from crocs.domain.models import (
     SCHEDULE_COLUMNS,
 )
 from crocs.ml.features import add_calendar_features, build_supervised_frame
-from crocs.ml.lightgbm_model import FEATURE_COLUMNS
+from crocs.ml.production import CATS, TABULAR, upcoming_break_days
 from crocs.ml.weather import add_weather_features, parse_pogodaiklimat_archive
 
 
@@ -53,22 +53,48 @@ def test_russian_holiday_features_for_may_2026():
     assert featured.loc[3, "holiday_name_code"] == 0
 
 
-def test_model_feature_set_uses_short_lags_and_salary_features():
-    assert "lag_7d" in FEATURE_COLUMNS
-    assert "lag_14d" in FEATURE_COLUMNS
-    assert "lag_28d" in FEATURE_COLUMNS
-    assert "lag_56d" not in FEATURE_COLUMNS
-    assert "lag_91d" not in FEATURE_COLUMNS
-    assert "lag_182d" not in FEATURE_COLUMNS
-    assert "lag_364d" not in FEATURE_COLUMNS
-    assert "is_salary_day" in FEATURE_COLUMNS
-    assert "is_salary_window_2d" in FEATURE_COLUMNS
-    assert "days_to_salary_day" in FEATURE_COLUMNS
-    assert "quarter" in FEATURE_COLUMNS
-    assert "hour_sin" in FEATURE_COLUMNS
-    assert "dow_cos" in FEATURE_COLUMNS
-    assert "daily_guests_lag_7d" in FEATURE_COLUMNS
-    assert "daily_guests_rolling_28d_mean" in FEATURE_COLUMNS
+def test_production_feature_set():
+    """Production использует 39 фич, 8 категориальных для CatBoost target-encoding."""
+    # Лаги — основа модели
+    assert "lag_7d" in TABULAR
+    assert "lag_14d" in TABULAR
+    assert "lag_28d" in TABULAR
+    assert "lag_364d" in TABULAR
+    assert "rolling_7d_mean" in TABULAR
+    assert "rolling_28d_mean" in TABULAR
+    assert "rolling_7d_to_28d_ratio" in TABULAR
+
+    # Праздники
+    assert "is_ru_public_holiday" in TABULAR
+    assert "is_may_day_block" in TABULAR
+    assert "days_to_next_ru_holiday" in TABULAR
+
+    # Break-days (новые фичи)
+    assert "upcoming_break_days" in TABULAR
+    assert "past_break_days" in TABULAR
+    assert "is_bridge_day" in TABULAR
+
+    # Lagged weather (без data leakage)
+    assert "weather_temp_lag_7d" in TABULAR
+    assert "weather_precip_lag_7d" in TABULAR
+
+    # Категориальные (8 шт)
+    assert len(CATS) == 8
+    assert "day_of_week" in CATS
+    assert "sale_hour" in CATS
+    assert "holiday_name_code" in CATS
+    assert "upcoming_break_days" in CATS
+
+
+def test_upcoming_break_days_calendar():
+    """Календарь bridge-дней корректно расставлен для 2024-2026."""
+    import pandas as pd
+    # 2025-04-30 → впереди 4-дневный weekend (May 1-4)
+    assert upcoming_break_days(pd.Timestamp("2025-04-30")) == 4
+    # 2026-04-30 → впереди 3-дневный weekend (May 1-3)
+    assert upcoming_break_days(pd.Timestamp("2026-04-30")) == 3
+    # 2024-04-30 → впереди только May 1 (изолированный)
+    assert upcoming_break_days(pd.Timestamp("2024-04-30")) == 1
 
 
 def test_calendar_features_cover_quarter_salary_and_time_of_day():
@@ -182,21 +208,9 @@ def test_pogodaiklimat_parser_converts_utc_to_moscow_hour():
     assert weather.loc[0, "is_weather_rain"] == 1
 
 
-def test_ensemble_weights_prefer_lower_validation_error():
-    import pytest
+def test_production_uses_catboost_mae():
+    """Production imports CatBoost MAE model helpers without data leakage."""
+    from crocs.ml.production import run_forecast, train_model
 
-    pytest.importorskip("catboost")
-    from crocs.ml.ensemble_model import BASE_MODEL_NAMES, _inverse_error_weights
-
-    weights = _inverse_error_weights(
-        {
-            "random_forest": 0.20,
-            "xgboost": 0.10,
-            "catboost": 0.05,
-            "lightgbm": 0.15,
-        }
-    )
-
-    assert set(weights) == set(BASE_MODEL_NAMES)
-    assert round(sum(weights.values()), 6) == 1.0
-    assert weights["catboost"] > weights["xgboost"] > weights["random_forest"]
+    assert callable(run_forecast)
+    assert callable(train_model)

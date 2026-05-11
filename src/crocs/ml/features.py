@@ -18,7 +18,6 @@ def prepare_hourly_series(
     train: pd.DataFrame,
     hours: Iterable[int] | None = None,
 ) -> pd.DataFrame:
-    """Prepare a regular date-hour series for feature generation."""
     missing = set(FORECAST_COLUMNS) - set(train.columns)
     if missing:
         raise ValueError(f"train missing columns: {sorted(missing)}")
@@ -49,7 +48,6 @@ def prepare_hourly_series(
 
 
 def add_calendar_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Add calendar, seasonality, holiday, salary-day, and time-of-day features."""
     featured = df.copy()
     featured["sale_date"] = pd.to_datetime(featured["sale_date"], errors="raise")
     featured["sale_hour"] = featured["sale_hour"].astype(int)
@@ -87,7 +85,6 @@ def add_calendar_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_salary_day_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Add salary/advance day flags and proximity features."""
     featured = df.copy()
     dates = pd.to_datetime(featured["sale_date"], errors="raise")
     normalized_dates = dates.dt.normalize()
@@ -160,47 +157,22 @@ def _days_since_salary(current: pd.Timestamp) -> int:
 
 
 def add_lag_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Add leakage-safe hourly and daily lag/rolling features."""
     featured = df.sort_values(["sale_hour", "sale_date"]).copy()
     grouped = featured.groupby("sale_hour", group_keys=False)["guests_count"]
 
     featured["lag_7d"] = grouped.shift(7)
     featured["lag_14d"] = grouped.shift(14)
     featured["lag_28d"] = grouped.shift(28)
+    featured["lag_364d"] = grouped.shift(364)
     featured["rolling_7d_mean"] = grouped.transform(
         lambda series: series.shift(1).rolling(7, min_periods=3).mean()
     )
     featured["rolling_28d_mean"] = grouped.transform(
         lambda series: series.shift(1).rolling(28, min_periods=7).mean()
     )
-
-    daily = (
-        featured.groupby("sale_date", as_index=False)["guests_count"]
-        .sum(min_count=1)
-        .rename(columns={"guests_count": "daily_guests"})
-        .sort_values("sale_date")
-    )
-    daily["daily_guests_lag_7d"] = daily["daily_guests"].shift(7)
-    daily["daily_guests_lag_28d"] = daily["daily_guests"].shift(28)
-    daily["daily_guests_rolling_7d_mean"] = (
-        daily["daily_guests"].shift(1).rolling(7, min_periods=3).mean()
-    )
-    daily["daily_guests_rolling_28d_mean"] = (
-        daily["daily_guests"].shift(1).rolling(28, min_periods=7).mean()
-    )
-    featured = featured.merge(
-        daily[
-            [
-                "sale_date",
-                "daily_guests_lag_7d",
-                "daily_guests_lag_28d",
-                "daily_guests_rolling_7d_mean",
-                "daily_guests_rolling_28d_mean",
-            ]
-        ],
-        on="sale_date",
-        how="left",
-    )
+    featured["rolling_7d_to_28d_ratio"] = (
+        featured["rolling_7d_mean"] / featured["rolling_28d_mean"]
+    ).replace([np.inf, -np.inf], np.nan)
 
     return featured.sort_values(["sale_date", "sale_hour"]).reset_index(drop=True)
 
@@ -210,22 +182,17 @@ def build_supervised_frame(
     hours: Iterable[int] | None = None,
     weather: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Build a model-ready frame from raw train data."""
     series = prepare_hourly_series(train, hours=hours)
     featured = add_calendar_features(series)
     featured = add_weather_features(featured, weather)
     featured = add_lag_features(featured)
     span_days = (featured["sale_date"].max() - featured["sale_date"].min()).days + 1
 
-    # Lag features appear only after enough past dates; short smoke-test series
-    # should not fail just because optional lag columns are not ready yet.
     subset = ["guests_count"]
     for lag, need_days in (
         ("lag_7d", 8),
         ("lag_14d", 15),
         ("lag_28d", 29),
-        ("daily_guests_lag_7d", 8),
-        ("daily_guests_lag_28d", 29),
     ):
         if span_days >= need_days:
             subset.append(lag)
