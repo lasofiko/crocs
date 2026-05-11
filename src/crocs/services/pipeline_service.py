@@ -103,4 +103,9 @@ def run_pipeline(
     except Exception as exc:
         warnings.append(f"графики не сохранены: {exc}")
 
-    return PipelineResult(forecast=forecast_df, schedule=schedule_df, warnings=warnings)
+    return PipelineResult(
+        forecast=forecast_df,
+        schedule=schedule_df,
+        labor_demand=demand_df,
+        warnings=warnings,
+    )

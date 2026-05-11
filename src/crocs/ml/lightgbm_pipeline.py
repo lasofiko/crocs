@@ -11,11 +11,6 @@ from crocs.domain.models import FORECAST_COLUMNS
 _HISTORY_LOOKBACK_DAYS = 420
 from crocs.exceptions import ForecastError
 from crocs.ml.baseline import build_future_calendar
-from crocs.ml.ensemble_model import (
-    ForecastEnsemble,
-    predict_forecast_ensemble,
-    train_forecast_ensemble,
-)
 from crocs.ml.features import (
     MODEL_TRAIN_START,
     add_calendar_features,
@@ -57,6 +52,14 @@ def run_ensemble_forecast(
             "Train frame is empty after feature preparation: not enough history for lags "
             "or all rows were filtered out."
         )
+
+    try:
+        from crocs.ml.ensemble_model import train_forecast_ensemble
+    except ImportError as exc:
+        raise ForecastError(
+            "Не установлены зависимости ансамбля (xgboost, catboost и др.). "
+            "Выполните: pip install -e ."
+        ) from exc
 
     model = train_forecast_ensemble(train_frame)
     future_calendar = build_future_calendar(forecast_start, forecast_end, hours=hours)
@@ -116,6 +119,8 @@ def recursive_forecast(
     *,
     weather: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
+    from crocs.ml.ensemble_model import predict_forecast_ensemble
+
     history_frame = _prepare_history(history)
     calendar = _prepare_calendar(target_calendar)
     fc_min = cast(pd.Timestamp, calendar["sale_date"].min())
