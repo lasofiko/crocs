@@ -4,7 +4,6 @@ import type { HeaderProps } from '../../types/header';
 function Header({
     day,
     time,
-    guestsCount,
     onSaveSchedule,
     screenDimmed = false,
 }: HeaderProps) {
@@ -33,8 +32,6 @@ function Header({
                     <i className="bi bi-calendar" />
                     <div className="weakness">{day}</div>
                 </div>
-
-                <div className="guest-cnt">{guestsCount === null ? '' : `${guestsCount} чел.`}</div>
             </div>
 
             {screenDimmed ? <div className="header__screen-dim" aria-hidden /> : null}

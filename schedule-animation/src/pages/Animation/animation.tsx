@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import './animation.css';
-import { fetchAnimationSchedule, fetchScheduleExcel } from '../../api/scheduleApi';
+import { DEFAULT_PAGE_SIZE, fetchScheduleAnimationPage, fetchScheduleExcel } from '../../api/scheduleApi';
 import Header from '../../components/Header/header';
 import PlaybackBar from '../../components/PlaybackBar/PlaybackBar';
+import WeekStationsBoard from '../../components/WeekStationsBoard/WeekStationsBoard';
 import type { AnimationScheduleItem } from '../../types/schedule';
-import {
-    buildHourBoundaryIndices,
-    nextHourStartIndex,
-    prevHourStartIndex,
-} from '../../utils/hourBoundaries';
+import { buildWeekSlidesFromSchedule } from '../../utils/buildWeekSlides';
+import { dedupeScheduleRows } from '../../utils/dedupeScheduleRows';
 import { filterValidScheduleRows } from '../../utils/filterValidScheduleRows';
 import { formatDay, formatHour } from '../../utils/scheduleFormat';
 
@@ -22,64 +20,109 @@ const DEFAULT_HEADER_DATA: AnimationScheduleItem = {
     day: 1,
 };
 
-const SLIDE_DURATION = 3000;
+/** Рабочие часы: дольше на слайд; ночь 0–6 — быстро «проматываем» до открытия */
+const WORKING_SLIDE_MS = 5000;
+const OFF_HOURS_SLIDE_MS = 180;
 const WORK_START_HOUR = 7;
 const WORK_END_HOUR = 23;
-
-function getStartIndex(schedule: AnimationScheduleItem[]): number {
-    const mondayStartIndex = schedule.findIndex((item) => item.day === 1 && item.hour === WORK_START_HOUR);
-
-    return mondayStartIndex === -1 ? 0 : mondayStartIndex;
-}
 
 function Animation() {
     const [scheduleData, setScheduleData] = useState<AnimationScheduleItem[]>([DEFAULT_HEADER_DATA]);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isPaused, setIsPaused] = useState(false);
+    const [fetchHint, setFetchHint] = useState<string | null>(null);
 
-    const hourBoundaries = useMemo(() => buildHourBoundaryIndices(scheduleData), [scheduleData]);
+    const slides = useMemo(() => buildWeekSlidesFromSchedule(scheduleData), [scheduleData]);
 
-    const headerData = scheduleData[currentIndex] ?? DEFAULT_HEADER_DATA;
-    const isWorkingTime = headerData.hour >= WORK_START_HOUR && headerData.hour <= WORK_END_HOUR;
+    const currentSlide = slides[currentIndex] ?? slides[0];
+    const isWorkingTime =
+        currentSlide !== undefined &&
+        currentSlide.hour >= WORK_START_HOUR &&
+        currentSlide.hour <= WORK_END_HOUR;
+
+    const slideCount = slides.length;
 
     useEffect(() => {
-        const apiBase = import.meta.env.VITE_API_URL?.trim() ?? '';
+        setCurrentIndex((i) => Math.min(i, Math.max(0, slideCount - 1)));
+    }, [slideCount]);
 
-        if (!apiBase) {
-            setScheduleData([DEFAULT_HEADER_DATA]);
-            setCurrentIndex(0);
-            return;
-        }
+    useEffect(() => {
+        let cancelled = false;
+        let page = 0;
+        const acc: AnimationScheduleItem[] = [];
+        let seededIndex = false;
 
-        fetchAnimationSchedule()
-            .then((schedule) => {
-                const valid = filterValidScheduleRows(schedule);
+        (async () => {
+            try {
+                while (!cancelled) {
+                    const res = await fetchScheduleAnimationPage({ page, pageSize: DEFAULT_PAGE_SIZE });
+                    const valid = filterValidScheduleRows(res.items);
+                    acc.push(...valid);
+                    const merged = dedupeScheduleRows(acc);
 
-                if (valid.length > 0) {
-                    setScheduleData(valid);
-                    setCurrentIndex(getStartIndex(valid));
-                } else {
+                    if (cancelled) {
+                        break;
+                    }
+
+                    if (merged.length > 0) {
+                        setScheduleData(merged);
+                        if (!seededIndex) {
+                            setCurrentIndex(0);
+                            seededIndex = true;
+                        }
+                    } else if (page === 0) {
+                        setScheduleData([DEFAULT_HEADER_DATA]);
+                        setCurrentIndex(0);
+                    }
+
+                    if (!res.hasMore) {
+                        break;
+                    }
+
+                    page += 1;
+                }
+
+                if (!cancelled) {
+                    const finalRows = dedupeScheduleRows(acc);
+                    setFetchHint(
+                        finalRows.length === 0
+                            ? 'Нет строк для экрана: положите schedule.xlsx в artifacts (после run_pipeline) и перезапустите API, либо проверьте CROCS_ARTIFACTS_DIR.'
+                            : null,
+                    );
+                }
+            } catch (err) {
+                console.error('schedule fetch', err);
+                if (!cancelled) {
                     setScheduleData([DEFAULT_HEADER_DATA]);
                     setCurrentIndex(0);
+                    setFetchHint(
+                        'Не удалось загрузить /api/schedule/animation. Запустите uvicorn на :8000 и npm run dev (прокси /api), откройте консоль браузера.',
+                    );
                 }
-            })
-            .catch(() => {
-                setScheduleData([DEFAULT_HEADER_DATA]);
-                setCurrentIndex(0);
-            });
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
     useEffect(() => {
-        if (isPaused || scheduleData.length <= 1) {
+        if (isPaused || slideCount <= 1) {
             return undefined;
         }
 
-        const intervalId = window.setInterval(() => {
-            setCurrentIndex((index) => (index + 1) % scheduleData.length);
-        }, SLIDE_DURATION);
+        const hour = currentSlide.hour;
+        const isNight =
+            Number.isFinite(hour) && hour >= 0 && hour < WORK_START_HOUR;
+        const delayMs = isNight ? OFF_HOURS_SLIDE_MS : WORKING_SLIDE_MS;
 
-        return () => window.clearInterval(intervalId);
-    }, [isPaused, scheduleData.length]);
+        const timeoutId = window.setTimeout(() => {
+            setCurrentIndex((index) => (index + 1) % slideCount);
+        }, delayMs);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [isPaused, slideCount, currentIndex, currentSlide.hour]);
 
     const handleSaveSchedule = () => {
         fetchScheduleExcel()
@@ -96,34 +139,42 @@ function Animation() {
     };
 
     const handleSeek = (index: number) => {
-        setCurrentIndex(Math.max(0, Math.min(index, scheduleData.length - 1)));
+        setCurrentIndex(Math.max(0, Math.min(index, slideCount - 1)));
     };
 
     const handlePrevHour = () => {
-        setCurrentIndex((index) => prevHourStartIndex(hourBoundaries, index));
+        setCurrentIndex((index) => (index - 1 + slideCount) % slideCount);
     };
 
     const handleNextHour = () => {
-        setCurrentIndex((index) => nextHourStartIndex(hourBoundaries, index));
+        setCurrentIndex((index) => (index + 1) % slideCount);
     };
+
+    if (!currentSlide) {
+        return null;
+    }
 
     return (
         <main className="animation">
             <Header
-                day={isWorkingTime ? formatDay(headerData.day) : ''}
-                time={formatHour(headerData.hour)}
-                guestsCount={isWorkingTime ? headerData.expectedPeopleCount : null}
+                day={isWorkingTime ? formatDay(currentSlide.day) : ''}
+                time={formatHour(currentSlide.hour)}
                 onSaveSchedule={handleSaveSchedule}
                 screenDimmed={!isWorkingTime}
             />
 
             <section className="animation__stations" aria-label="Станции">
-                {/* Карточки станций и WalkingPerson — по данным с бэка */}
+                {fetchHint ? (
+                    <p className="animation__fetch-hint" role="status">
+                        {fetchHint}
+                    </p>
+                ) : null}
+                <WeekStationsBoard items={currentSlide.items} />
             </section>
 
             <PlaybackBar
                 currentIndex={currentIndex}
-                slideCount={scheduleData.length}
+                slideCount={slideCount}
                 isPaused={isPaused}
                 onPauseToggle={() => setIsPaused((value) => !value)}
                 onPrevHour={handlePrevHour}

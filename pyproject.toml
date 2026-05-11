@@ -36,7 +36,8 @@ dependencies = [
 [project.scripts]
 crocs = "crocs.cli:main"
 crocs-run = "crocs.cli:main"
-crocs-api = "crocs.api.main:run_server"
+crocs-api = "crocs.api.app:run"
+crocs-api-main = "crocs.api.main:run_server"
 
 [project.optional-dependencies]
 dev = [
