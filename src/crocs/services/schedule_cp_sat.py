@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Расписание: CP-SAT (OR-Tools)."""
+
 import math
 import os
 import sys
@@ -15,57 +17,6 @@ from ortools.sat.python import cp_model
 from crocs.domain.models import SchedulingInputs
 from crocs.exceptions import ScheduleError
 from crocs.services.minor_shift_limits import compute_staff_caps
-
-# Если в конфиге null — без лимита солвер может считать очень долго на больших моделях.
-_CP_SAT_DEFAULT_MAX_TIME_S = 300.0
-
-
-def _cp_sat_worker_count() -> int:
-    """Conservative default worker count for solver stability on Windows."""
-    raw = os.environ.get("CROCS_CP_SAT_WORKERS", "").strip()
-    if raw.isdigit():
-        return max(1, min(32, int(raw)))
-    ncpu = os.cpu_count() or 4
-    workers = min(8, max(1, ncpu))
-    if sys.platform == "win32":
-        workers = min(workers, 4)
-    return workers
-
-
-def _heartbeat_enabled() -> bool:
-    raw = os.environ.get("CROCS_CP_SAT_HEARTBEAT", "").strip().lower()
-    # default on for user feedback, can be disabled when investigating native crashes
-    return raw not in ("0", "false", "no", "off")
-
-
-def _cp_status_label(st: int) -> str:
-    """Имя статуса CP-SAT по коду возврата Solve() (совместимо с разными версиями ortools)."""
-    for name in ("OPTIMAL", "FEASIBLE", "INFEASIBLE", "MODEL_INVALID", "UNKNOWN"):
-        if hasattr(cp_model, name) and int(getattr(cp_model, name)) == int(st):
-            return name
-    return f"STATUS_{st}"
-
-
-def _solve_with_heartbeat(solver: cp_model.CpSolver, model: cp_model.CpModel, limit_s: float) -> int:
-    """Периодический вывод в консоль: большие модели могут молчать до отключения лимита времени."""
-    stop = threading.Event()
-    t0 = time.perf_counter()
-
-    def _tick() -> None:
-        interval = 45.0
-        while not stop.wait(interval):
-            elapsed = time.perf_counter() - t0
-            print(
-                f"CP-SAT: все еще считает... ~{elapsed:.0f}s, лимит времени <= {limit_s:g}s (не закрывайте окно).",
-                flush=True,
-            )
-
-    th = threading.Thread(target=_tick, daemon=True)
-    th.start()
-    try:
-        return int(solver.Solve(model))
-    finally:
-        stop.set()
 
 
 def _nid(x: object) -> str:
@@ -116,6 +67,30 @@ class _ShiftOption:
 
     def covers(self, hour: int) -> bool:
         return self.start_h <= hour < self.start_h + self.duration
+
+    def objective_coeff(self) -> int:
+        return int(self.shift_prio * 1000 + self.station_penalty * 100)
+
+
+def _dedupe_shift_options(options: list[_ShiftOption]) -> list[_ShiftOption]:
+    seen: set[tuple[Any, ...]] = set()
+    out: list[_ShiftOption] = []
+    for o in options:
+        key = (
+            o.emp_key,
+            o.day_idx,
+            pd.Timestamp(o.ds).normalize(),
+            o.station,
+            o.start_h,
+            o.duration,
+            o.shift_prio,
+            o.station_penalty,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(o)
+    return out
 
 
 def _parse_shifts(shifts: pd.DataFrame) -> list[tuple[int, int]]:
@@ -290,7 +265,23 @@ def _demand_grid(
     return days, hours, stations, demand, day_ts
 
 
-def solve_schedule_cp_sat(inputs: SchedulingInputs) -> pd.DataFrame:
+@dataclass
+class _ShiftAssignmentProblem:
+    options: list[_ShiftOption]
+    roster_keys: list[str]
+    roster_display: dict[str, Any]
+    hours: list[int]
+    by_emp_day: dict[tuple[str, int], list[int]]
+    by_emp: dict[str, list[int]]
+    coverage_idxs: dict[tuple[int, int, str], list[int]]
+    demand: dict[tuple[int, int, str], int]
+    day_ts: dict[int, Any]
+    max_extra: int
+    max_shifts_per_employee_week: int
+    week_cap: dict[str, float]
+
+
+def _build_shift_assignment_problem(inputs: SchedulingInputs) -> _ShiftAssignmentProblem:
     open_h = inputs.restaurant_open_hour
     close_h = inputs.restaurant_close_hour
     rest_end_exc = close_h + 1
@@ -319,8 +310,8 @@ def solve_schedule_cp_sat(inputs: SchedulingInputs) -> pd.DataFrame:
 
     options: list[_ShiftOption] = []
     for ek in roster_keys:
-        emp_obj = roster_display[ek]
         smax = shift_cap.get(ek, 24.0)
+        emp_obj = roster_display[ek]
         for day_idx in range(len(days)):
             ts = day_ts[day_idx]
             wd = int(pd.Timestamp(ts).dayofweek + 1)
@@ -353,6 +344,8 @@ def solve_schedule_cp_sat(inputs: SchedulingInputs) -> pd.DataFrame:
                             )
                         )
 
+    options = _dedupe_shift_options(options)
+
     if not options:
         raise ScheduleError(
             "no feasible shift templates (check sched, shifts, staff_limits)",
@@ -366,9 +359,6 @@ def solve_schedule_cp_sat(inputs: SchedulingInputs) -> pd.DataFrame:
             + ", ".join(str(x) for x in missing[:10]),
         )
 
-    model = cp_model.CpModel()
-    x = [model.NewBoolVar(f"x_{i}") for i in range(len(options))]
-
     by_emp_day: dict[tuple[str, int], list[int]] = defaultdict(list)
     by_emp: dict[str, list[int]] = defaultdict(list)
     coverage_idxs: dict[tuple[int, int, str], list[int]] = defaultdict(list)
@@ -380,15 +370,10 @@ def solve_schedule_cp_sat(inputs: SchedulingInputs) -> pd.DataFrame:
             if opt.covers(hour):
                 coverage_idxs[(opt.day_idx, hour, opt.station)].append(i)
 
-    for _ek_d, idxs in by_emp_day.items():
-        model.Add(sum(x[j] for j in idxs) <= 1)
-
     for key, req in demand.items():
         di, hour, st = key
         idxs = coverage_idxs.get((di, hour, st), [])
         if req == 0:
-            if idxs:
-                model.Add(sum(x[j] for j in idxs) <= max_extra)
             continue
         if not idxs:
             ds_label = pd.Timestamp(day_ts[di]).strftime("%Y-%m-%d (%A)")
@@ -401,27 +386,129 @@ def solve_schedule_cp_sat(inputs: SchedulingInputs) -> pd.DataFrame:
                 f"Нет ни одной допустимой смены под спрос: день index={di}, час={hour}, "
                 f"станция={st}, нужно={req}. {hint}",
             )
-        model.Add(sum(x[j] for j in idxs) >= req)
-        model.Add(sum(x[j] for j in idxs) <= req + max_extra)
+
+    max_sh = max(1, int(inputs.max_shifts_per_employee_week))
+    return _ShiftAssignmentProblem(
+        options=options,
+        roster_keys=roster_keys,
+        roster_display=roster_display,
+        hours=hours,
+        by_emp_day=dict(by_emp_day),
+        by_emp=dict(by_emp),
+        coverage_idxs=dict(coverage_idxs),
+        demand=dict(demand),
+        day_ts=day_ts,
+        max_extra=max_extra,
+        max_shifts_per_employee_week=max_sh,
+        week_cap=dict(week_cap),
+    )
+
+# Если в конфиге null — без лимита солвер может считать очень долго на больших моделях.
+_CP_SAT_DEFAULT_MAX_TIME_S = 300.0
+
+
+def _cp_sat_worker_count() -> int:
+    """Conservative default worker count for solver stability on Windows."""
+    raw = os.environ.get("CROCS_CP_SAT_WORKERS", "").strip()
+    if raw.isdigit():
+        return max(1, min(32, int(raw)))
+    ncpu = os.cpu_count() or 4
+    workers = min(8, max(1, ncpu))
+    if sys.platform == "win32":
+        workers = min(workers, 4)
+    return workers
+
+
+def _heartbeat_enabled() -> bool:
+    raw = os.environ.get("CROCS_CP_SAT_HEARTBEAT", "").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def _cp_status_label(st: int) -> str:
+    for name in ("OPTIMAL", "FEASIBLE", "INFEASIBLE", "MODEL_INVALID", "UNKNOWN"):
+        if hasattr(cp_model, name) and int(getattr(cp_model, name)) == int(st):
+            return name
+    return f"STATUS_{st}"
+
+
+def _solve_with_heartbeat(solver: cp_model.CpSolver, model: cp_model.CpModel, limit_s: float) -> int:
+    stop = threading.Event()
+    t0 = time.perf_counter()
+
+    def _tick() -> None:
+        interval = 45.0
+        while not stop.wait(interval):
+            elapsed = time.perf_counter() - t0
+            print(
+                f"CP-SAT: все еще считает... ~{elapsed:.0f}s, лимит времени <= {limit_s:g}s (не закрывайте окно).",
+                flush=True,
+            )
+
+    th = threading.Thread(target=_tick, daemon=True)
+    th.start()
+    try:
+        return int(solver.Solve(model))
+    finally:
+        stop.set()
+
+
+def solve_schedule_cp_sat(inputs: SchedulingInputs) -> pd.DataFrame:
+    prob = _build_shift_assignment_problem(inputs)
+    options = prob.options
+    roster_keys = prob.roster_keys
+    demand = prob.demand
+    day_ts = prob.day_ts
+    max_extra = prob.max_extra
+    coverage_idxs = prob.coverage_idxs
+    by_emp_day = prob.by_emp_day
+    by_emp = prob.by_emp
+    max_sh = prob.max_shifts_per_employee_week
+    week_cap = prob.week_cap
+
+    model = cp_model.CpModel()
+    x = [model.NewBoolVar(f"x_{i}") for i in range(len(options))]
+
+    for _ek_d, idxs in by_emp_day.items():
+        model.Add(cp_model.LinearExpr.Sum([x[j] for j in idxs]) <= 1)
+
+    for key, req in demand.items():
+        di, hour, st = key
+        idxs = coverage_idxs.get((di, hour, st), [])
+        if req == 0:
+            if idxs:
+                model.Add(cp_model.LinearExpr.Sum([x[j] for j in idxs]) <= max_extra)
+            continue
+        if not idxs:
+            ds_label = pd.Timestamp(day_ts[di]).strftime("%Y-%m-%d (%A)")
+            hint = (
+                "В sched.csv колонка day: понедельник=1 ... воскресенье=7. "
+                "Окно starttime..finishtime должно допускать смену из shifts.csv на этот час; "
+                f"проверьте shift_limit. Дата={ds_label}."
+            )
+            raise ScheduleError(
+                f"Нет ни одной допустимой смены под спрос: день index={di}, час={hour}, "
+                f"станция={st}, нужно={req}. {hint}",
+            )
+        model.Add(cp_model.LinearExpr.Sum([x[j] for j in idxs]) >= req)
+        model.Add(cp_model.LinearExpr.Sum([x[j] for j in idxs]) <= req + max_extra)
 
     for ek in roster_keys:
         idxs = by_emp[ek]
         wc = week_cap.get(ek)
         if wc is not None and idxs:
             cap_w = max(0, math.ceil(float(wc) - 1e-9))
-            model.Add(sum(x[j] * int(options[j].duration) for j in idxs) <= cap_w)
-        idxs_emp = [j for j in range(len(options)) if options[j].emp_key == ek]
-        max_sh = max(1, int(inputs.max_shifts_per_employee_week))
-        if idxs_emp:
-            model.Add(sum(x[j] for j in idxs_emp) <= max_sh)
-            model.Add(sum(x[j] for j in idxs_emp) >= 1)
+            model.Add(
+                cp_model.LinearExpr.Sum([x[j] * int(options[j].duration) for j in idxs]) <= cap_w
+            )
+        if idxs:
+            model.Add(cp_model.LinearExpr.Sum([x[j] for j in idxs]) <= max_sh)
+            model.Add(cp_model.LinearExpr.Sum([x[j] for j in idxs]) >= 1)
 
     obj_terms: list[cp_model.LinearExpr] = []
     for i, opt in enumerate(options):
-        coeff = opt.shift_prio * 1000 + opt.station_penalty * 100
-        obj_terms.append(x[i] * int(coeff))
+        obj_terms.append(x[i] * int(opt.objective_coeff()))
 
-    model.Minimize(sum(obj_terms))
+    model.Minimize(cp_model.LinearExpr.Sum(obj_terms))
 
     solver = cp_model.CpSolver()
     if inputs.solver_time_limit_seconds is not None:
@@ -491,5 +578,4 @@ def solve_schedule_cp_sat(inputs: SchedulingInputs) -> pd.DataFrame:
     if not rows_out:
         raise ScheduleError("solver returned an empty schedule")
 
-    out = pd.DataFrame(rows_out)
-    return out
+    return pd.DataFrame(rows_out)
