@@ -5,14 +5,23 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
-from crocs.config import GuestsSource, load_settings
+from crocs.config import GuestsSource
 from crocs.services.pipeline_service import run_pipeline
-from crocs.services.staffing_dashboard import StaffingGridResponse, build_staffing_grid
+
+
+class ForecastPipelineResponse(BaseModel):
+    warnings: list[str] = Field(default_factory=list)
+    forecast_rows: list[dict[str, object]] = Field(
+        default_factory=list,
+        description="Строки прогноза: sale_date, sale_hour, guests_count",
+    )
+
 
 app = FastAPI(
     title="Crocs",
-    description="Прогноз гостей и расписание: агрегированная сетка для UI.",
+    description="ML-прогноз почасового числа гостей.",
     version="0.1.0",
 )
 
@@ -40,29 +49,26 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/api/v1/staffing-grid", response_model=StaffingGridResponse)
-def get_staffing_grid(
-    data_dir: str = Query("data/raw", description="Каталог для ML и спроса: train, reqlabor, weather"),
-    schedule_input_dir: str = Query(
+@app.get("/api/v1/forecast-pipeline", response_model=ForecastPipelineResponse)
+def forecast_pipeline(
+    data_dir: str = Query("data/raw", description="Каталог для ML: train, weather"),
+    forecast_input_dir: str = Query(
         "data/output",
-        description="Каталог: sched, station_priorities, shifts, staff_limits; при guests_source=file — ещё forecast.xlsx",
+        description="Каталог с forecast.xlsx при guests_source=file",
     ),
-    artifacts_dir: str = Query("artifacts", description="Каталог для сохранения артефактов прогона"),
+    artifacts_dir: str = Query("artifacts", description="Каталог для артефактов прогона"),
     config: str | None = Query(
         None,
         description="YAML конфиг (по умолчанию configs/default.yaml относительно cwd)",
     ),
     guests_source: GuestsSource | None = Query(
         None,
-        description="Переопределить forecast.guests_source: file — forecast.xlsx в schedule_input_dir; model — train.",
+        description="Переопределить forecast.guests_source: file — forecast.xlsx; model — train.",
     ),
-) -> StaffingGridResponse:
-    """
-    Пайплайн спроса и расписания (по умолчанию прогноз гостей из forecast.xlsx в schedule_input_dir,
-    без переобучения; см. forecast.guests_source в YAML). Возвращает сетку по дате, часу и станции.
-    """
+) -> ForecastPipelineResponse:
+    """Запускает пайплайн прогноза гостей и возвращает таблицу прогноза."""
     dd = _relative_path(data_dir)
-    sd = _relative_path(schedule_input_dir)
+    fd = _relative_path(forecast_input_dir)
     ad = _relative_path(artifacts_dir)
     cfg_path = _relative_path(config) if config else None
     try:
@@ -70,25 +76,14 @@ def get_staffing_grid(
             dd,
             ad,
             config_path=cfg_path,
-            schedule_input_dir=sd,
+            forecast_input_dir=fd,
             guests_source=guests_source,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    cfg_file = cfg_path if cfg_path is not None else Path("configs/default.yaml")
-    if not cfg_file.is_file():
-        cfg_file = Path("configs/default.yaml")
-    settings = load_settings(cfg_file)
-
-    return build_staffing_grid(
-        result.forecast,
-        result.labor_demand,
-        result.schedule,
-        open_hour=settings.forecast.open_hour,
-        close_hour=settings.forecast.close_hour,
-        warnings=result.warnings,
-    )
+    rows = result.forecast.to_dict(orient="records")
+    return ForecastPipelineResponse(warnings=result.warnings, forecast_rows=rows)
 
 
 def run_server() -> None:

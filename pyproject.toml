@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "crocs"
 version = "0.1.0"
-description = "Guest forecasting and restaurant staff shift scheduling."
+description = "Guest forecasting (ML) for restaurants."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -17,12 +17,9 @@ dependencies = [
     "numpy>=2.1.0",
     "openpyxl>=3.1.0",
     "optuna>=4.0.0",
-    "ortools>=9.11.0",
     "pandas>=2.2.0",
     "pydantic>=2.9.0",
     "pydantic-settings>=2.5.0",
-    "pulp>=2.9.0",
-    "pyomo>=6.8.0",
     "pyyaml>=6.0.0",
     "rich>=13.8.0",
     "catboost>=1.2.8",

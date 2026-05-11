@@ -1,11 +1,6 @@
 from crocs import __version__
 from crocs.config import Settings
-from crocs.domain.models import (
-    COVERAGE_REPORT_COLUMNS,
-    FORECAST_COLUMNS,
-    LABOR_DEMAND_COLUMNS,
-    SCHEDULE_COLUMNS,
-)
+from crocs.domain.models import FORECAST_COLUMNS
 from crocs.ml.features import add_calendar_features, build_supervised_frame
 from crocs.ml.production import CATS, TABULAR, upcoming_break_days
 from crocs.ml.weather import add_weather_features, parse_pogodaiklimat_archive
@@ -17,16 +12,14 @@ def test_version():
 
 def test_schema_columns():
     assert "sale_date" in FORECAST_COLUMNS
-    assert "required_employees" in LABOR_DEMAND_COLUMNS
-    assert "station_key" in SCHEDULE_COLUMNS
-    assert "issue_type" in COVERAGE_REPORT_COLUMNS
+    assert "guests_count" in FORECAST_COLUMNS
 
 
 def test_default_settings():
     settings = Settings()
     assert settings.paths.raw_data_dir.as_posix() == "data/raw"
-    assert settings.paths.schedule_input_dir.as_posix() == "data/output"
-    assert settings.outputs.coverage_report == "coverage_report.xlsx"
+    assert settings.paths.forecast_input_dir.as_posix() == "data/output"
+    assert settings.outputs.forecast == "forecast.xlsx"
 
 
 def test_russian_holiday_features_for_may_2026():

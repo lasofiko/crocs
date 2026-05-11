@@ -1,3 +1,3 @@
-from crocs.viz.report_figures import write_pipeline_figures
+from crocs.viz.report_figures import plot_forecast_guests
 
-__all__ = ["write_pipeline_figures"]
+__all__ = ["plot_forecast_guests"]

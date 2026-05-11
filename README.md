@@ -1,35 +1,34 @@
 # crocs
 
-Прогноз гостей и расписание персонала (ТЗ кейса).
+Почасовой прогноз числа гостей (ML: CatBoost и др.).
 
 ## Структура
 
 ```text
 scripts/run_pipeline.py    # python -m scripts.run_pipeline
-data/raw/                  # ML и спрос: train, reqlabor, weather
-data/output/               # только оптимизация расписания: sched, station_priorities, shifts, staff_limits
-artifacts/                 # forecast.xlsx, schedule.xlsx; подпапки figures/, demo/
+data/raw/                  # train, опционально weather / weather_moscow
+data/output/               # при guests_source=file — forecast.xlsx
+artifacts/                 # forecast.xlsx, подпапка figures/
 src/crocs/
   api/  domain/  io/  services/  ml/  cli.py  config.py
 tests/
-develop/ARCHITECTURE.md
 ```
 
 ## Установка и запуск
 
-- **ML и почасовой спрос:** **`data/raw/`** — `train`, `reqlabor`, опционально `weather` / `weather_moscow` (`.csv` или `.xlsx`). Другая папка: `--data-dir`.
-- **Только солвер расписания:** **`data/output/`** — `sched`, `station_priorities`, `shifts`, `staff_limits`. Другая папка: `--schedule-input-dir` или `paths.schedule_input_dir` в YAML.
+- **Данные для ML:** **`data/raw/`** — `train.csv` / `.xlsx`, опционально `weather`. Другая папка: `--data-dir`.
+- **Готовый прогноз из файла:** положите **`forecast.xlsx`** в **`data/output/`** (или задайте `--forecast-input-dir` / `paths.forecast_input_dir` в YAML). В конфиге **`forecast.guests_source: file`**.
 
-Результаты пайплайна — в **`artifacts/`**.
+Результаты — в **`artifacts/`** (`forecast.xlsx`, график `figures/01_forecast_guests.png`).
 
 ```powershell
 pip install -e ".[dev]"
-python -m scripts.run_pipeline
+python -m crocs
 ```
 
-Также: `python -m crocs`, `crocs-run`. Опционально ML: `pip install -e ".[dev,ml]"`. Проверка входов: `--check-only`.
+Также: `crocs-run`. Проверка входов: `python -m crocs --check-only`.
 
-После `run_pipeline` витрина расписания для фронта `schedule-animation/`: `crocs-api` (по умолчанию `http://127.0.0.1:8000`, читает `artifacts/schedule.xlsx` и `artifacts/forecast.xlsx`). Переменная `CROCS_ARTIFACTS_DIR` задаёт другую папку. В dev фронта прокси Vite шлёт `/api` на этот хост; `VITE_API_URL` можно не задавать.
+HTTP API прогноза: `crocs-api-main` → эндпоинт **`GET /api/v1/forecast-pipeline`** (см. `src/crocs/api/main.py`).
 
 ## Тесты
 
