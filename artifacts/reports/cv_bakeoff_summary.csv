@@ -1,0 +1,16 @@
+segment,approach,wape,bias,emp_mae,coverage,overstaff,understaff
+holiday,B1_median_8w,0.1839,9.122,1.1875,0.7976,0.8571,0.3304
+holiday,B2_seasonal_naive_7d,0.1738,7.4137,1.1161,0.7827,0.7768,0.3393
+holiday,M1_single_lgbm_q0.7,0.1302,4.0357,0.8452,0.8006,0.5327,0.3125
+holiday,M2_ensemble_4model,0.1193,-1.0149,0.7917,0.7262,0.3542,0.4375
+holiday,M3_hybrid_B1_plus_lgbm_q0.7,0.1373,4.0179,0.8929,0.7887,0.5685,0.3244
+rolling,B1_median_8w,0.0785,-1.9881,0.7143,0.7708,0.2768,0.4375
+rolling,B2_seasonal_naive_7d,0.1012,2.381,0.881,0.7976,0.5446,0.3363
+rolling,M1_single_lgbm_q0.7,0.1163,11.3839,0.9762,0.9524,0.8839,0.0923
+rolling,M2_ensemble_4model,0.0876,5.7589,0.7857,0.8988,0.6071,0.1786
+rolling,M3_hybrid_B1_plus_lgbm_q0.7,0.1131,10.8363,0.9851,0.9375,0.8601,0.125
+all,B1_median_8w,0.1312,3.567,0.9509,0.7842,0.567,0.3839
+all,B2_seasonal_naive_7d,0.1375,4.8973,0.9985,0.7902,0.6607,0.3378
+all,M1_single_lgbm_q0.7,0.1232,7.7098,0.9107,0.8765,0.7083,0.2024
+all,M2_ensemble_4model,0.1034,2.372,0.7887,0.8125,0.4807,0.308
+all,M3_hybrid_B1_plus_lgbm_q0.7,0.1252,7.4271,0.939,0.8631,0.7143,0.2247
