@@ -26,6 +26,9 @@ forecast:
   close_hour: 23
 
 scheduling:
+  # cp_sat — OR-Tools; pyomo — MILP (нужен CBC в PATH или пакет highspy для HiGHS).
+  schedule_engine: cp_sat
+  milp_solver: auto
   # null — в коде подставится 300 с. Для ~50k+ переменных чаще нужен 1200+ или configs/relaxed_scheduling.yaml
   solver_time_limit_seconds: 1200
   max_extra_coverage: 2

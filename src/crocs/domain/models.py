@@ -50,3 +50,7 @@ class SchedulingInputs:
     # Час закрытия; почасовой спрос использует sale_hour ∈ [open, close).
     restaurant_close_hour: int = 23
     solver_time_limit_seconds: float | None = None
+    # cp_sat — OR-Tools; pyomo — MILP (CBC/HiGHS через Pyomo).
+    schedule_engine: str = "cp_sat"
+    # Для schedule_engine=pyomo: auto | cbc | highs
+    milp_solver: str = "auto"

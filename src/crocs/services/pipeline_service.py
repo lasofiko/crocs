@@ -62,7 +62,9 @@ def run_pipeline(
     assert bundle.shifts is not None
     assert bundle.staff_limits is not None
 
-    _stage("Расписание (CP-SAT): подбор смен, может занять минуты...")
+    _stage(
+        f"Расписание ({settings.scheduling.schedule_engine}): подбор смен, может занять минуты...",
+    )
     schedule_df = solve_schedule(
         SchedulingInputs(
             hourly_demand=demand_df,
@@ -78,6 +80,8 @@ def run_pipeline(
             restaurant_open_hour=settings.forecast.open_hour,
             restaurant_close_hour=settings.forecast.close_hour,
             solver_time_limit_seconds=settings.scheduling.solver_time_limit_seconds,
+            schedule_engine=settings.scheduling.schedule_engine,
+            milp_solver=settings.scheduling.milp_solver,
         )
     )
     _stage(f"Расписание построено: {len(schedule_df)} строк.")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -71,6 +72,14 @@ class SchedulingConfig(BaseModel):
             "Если true — у каждого человека из sched.csv минимум одна смена за горизонт недели "
             "(при большом списке и малом спросе часто даёт INFEASIBLE)."
         ),
+    )
+    schedule_engine: Literal["cp_sat", "pyomo"] = Field(
+        default="cp_sat",
+        description="Движок расписания: cp_sat (OR-Tools) или pyomo (MILP CBC/HiGHS).",
+    )
+    milp_solver: Literal["auto", "cbc", "highs"] = Field(
+        default="auto",
+        description="Для pyomo: какой MILP-солвер предпочесть (auto — HiGHS при наличии, иначе CBC).",
     )
 
     @field_validator("min_employees_relaxed_sale_hours", mode="after")
