@@ -21,6 +21,7 @@ plt.rcParams["font.family"] = "DejaVu Sans"
 
 try:
     import shap
+
     HAS_SHAP = True
 except ImportError:
     HAS_SHAP = False
@@ -42,12 +43,16 @@ from crocs.ml.production import (
 
 FORECAST_START = date(2026, 4, 27)
 FORECAST_END = date(2026, 5, 3)
+WEATHER_CANDIDATES = [
+    Path("data/raw/weather_moscow_open_meteo_forecast.csv"),
+    Path("data/raw/weather_moscow.csv"),
+]
 CV_FOLDS = [
     ("holiday_may2025", pd.Timestamp("2025-04-27"), pd.Timestamp("2025-05-03")),
-    ("recent_w1",       pd.Timestamp("2026-04-20"), pd.Timestamp("2026-04-26")),
-    ("recent_w2",       pd.Timestamp("2026-04-13"), pd.Timestamp("2026-04-19")),
-    ("recent_w3",       pd.Timestamp("2026-04-06"), pd.Timestamp("2026-04-12")),
-    ("recent_w4",       pd.Timestamp("2026-03-30"), pd.Timestamp("2026-04-05")),
+    ("recent_w1", pd.Timestamp("2026-04-20"), pd.Timestamp("2026-04-26")),
+    ("recent_w2", pd.Timestamp("2026-04-13"), pd.Timestamp("2026-04-19")),
+    ("recent_w3", pd.Timestamp("2026-04-06"), pd.Timestamp("2026-04-12")),
+    ("recent_w4", pd.Timestamp("2026-03-30"), pd.Timestamp("2026-04-05")),
 ]
 
 
@@ -61,9 +66,11 @@ def compute_metrics(actual: pd.DataFrame, predicted: pd.DataFrame) -> dict:
     yhat = m["guests_count_pred"].astype(float).to_numpy()
     diff = yhat - y
     return {
-        "wape": float(np.sum(np.abs(diff)) / np.sum(np.abs(y))) if np.sum(np.abs(y)) > 0 else float("inf"),
-        "mae":  float(np.mean(np.abs(diff))),
-        "rmse": float(np.sqrt(np.mean(diff ** 2))),
+        "wape": float(np.sum(np.abs(diff)) / np.sum(np.abs(y)))
+        if np.sum(np.abs(y)) > 0
+        else float("inf"),
+        "mae": float(np.mean(np.abs(diff))),
+        "rmse": float(np.sqrt(np.mean(diff**2))),
         "bias": float(np.mean(diff)),
         "rows": len(m),
         "merged": m,
@@ -71,15 +78,31 @@ def compute_metrics(actual: pd.DataFrame, predicted: pd.DataFrame) -> dict:
 
 
 def save_submission(forecast: pd.DataFrame, name: str = "final.csv") -> Path:
-    sub = pd.DataFrame({
-        "ID": pd.to_datetime(forecast["sale_date"]).dt.strftime("%Y-%m-%d") + "-" +
-              forecast["sale_hour"].astype(str).str.zfill(2),
-        "guests_count": forecast["guests_count"].astype(int),
-    })
+    sub = pd.DataFrame(
+        {
+            "ID": pd.to_datetime(forecast["sale_date"]).dt.strftime("%Y-%m-%d")
+            + "-"
+            + forecast["sale_hour"].astype(str).str.zfill(2),
+            "guests_count": forecast["guests_count"].astype(int),
+        }
+    )
     out = Path(f"data/output/{name}")
     sub.to_csv(out, index=False)
     print(f"  -> {out}  ({sub['guests_count'].sum():,} guests)")
     return out
+
+
+def load_weather() -> pd.DataFrame:
+    for path in WEATHER_CANDIDATES:
+        if path.exists():
+            print(f"  Weather source: {path}")
+            weather = pd.read_csv(path)
+            weather["sale_date"] = pd.to_datetime(weather["sale_date"])
+            return weather
+    raise FileNotFoundError(
+        "No weather CSV found. Expected one of: "
+        + ", ".join(str(path) for path in WEATHER_CANDIDATES)
+    )
 
 
 def sanity_check_calendar() -> None:
@@ -105,10 +128,11 @@ def main() -> None:
     train = pd.read_csv("data/raw/train.csv")
     train["sale_date"] = pd.to_datetime(train["sale_date"])
     train = train[train["sale_date"] >= MODEL_TRAIN_START].copy()
-    print(f"  Train: {len(train):,} rows, {train['sale_date'].min().date()} -> {train['sale_date'].max().date()}")
+    print(
+        f"  Train: {len(train):,} rows, {train['sale_date'].min().date()} -> {train['sale_date'].max().date()}"
+    )
 
-    weather_raw = pd.read_csv("data/raw/weather_moscow.csv")
-    weather_raw["sale_date"] = pd.to_datetime(weather_raw["sale_date"])
+    weather_raw = load_weather()
     weather_interp = interpolate_weather(weather_raw)
     print(f"  Weather: {len(weather_raw):,} obs -> {len(weather_interp):,} interpolated")
 
@@ -121,7 +145,9 @@ def main() -> None:
 
     for fold_name, val_start, val_end in CV_FOLDS:
         train_fold = train[train["sale_date"] < val_start].copy()
-        actual_fold = train[(train["sale_date"] >= val_start) & (train["sale_date"] <= val_end)].copy()
+        actual_fold = train[
+            (train["sale_date"] >= val_start) & (train["sale_date"] <= val_end)
+        ].copy()
         if len(actual_fold) == 0:
             continue
 
@@ -132,13 +158,19 @@ def main() -> None:
         pred_fold = predict_recursive(model_fold, train_fold, cal_fold, weather_interp)
 
         metrics = compute_metrics(actual_fold, pred_fold)
-        cv_results.append({
-            "fold": fold_name, "val_start": val_start.date(), "val_end": val_end.date(),
-            **{k: v for k, v in metrics.items() if k != "merged"},
-        })
+        cv_results.append(
+            {
+                "fold": fold_name,
+                "val_start": val_start.date(),
+                "val_end": val_end.date(),
+                **{k: v for k, v in metrics.items() if k != "merged"},
+            }
+        )
         fold_predictions[fold_name] = (actual_fold, pred_fold)
         period = f"{val_start.date()} -> {val_end.date()}"
-        print(f"  {fold_name:25s}  {period:30s}  {metrics['wape']:7.4f}  {metrics['mae']:7.2f}  {metrics['bias']:+7.2f}")
+        print(
+            f"  {fold_name:25s}  {period:30s}  {metrics['wape']:7.4f}  {metrics['mae']:7.2f}  {metrics['bias']:+7.2f}"
+        )
 
     cv_df = pd.DataFrame(cv_results)
     cv_df.to_csv("artifacts/reports/final_cv.csv", index=False)
@@ -148,7 +180,9 @@ def main() -> None:
     print(f"\nFinal training on full data (through {train['sale_date'].max().date()})")
     frame_full = build_frame(train, weather_interp)
     weights_full = make_sample_weights(frame_full)
-    print(f"  Train frame: {len(frame_full):,} rows x {len(TABULAR)} features ({len(CATS)} categorical)")
+    print(
+        f"  Train frame: {len(frame_full):,} rows x {len(TABULAR)} features ({len(CATS)} categorical)"
+    )
     model_full = train_model(frame_full, weights_full)
 
     print(f"\nForecast {FORECAST_START} -> {FORECAST_END}")
@@ -164,10 +198,12 @@ def main() -> None:
 
     Path("artifacts/figures").mkdir(parents=True, exist_ok=True)
 
-    importance = pd.DataFrame({
-        "feature": TABULAR,
-        "importance": model_full.get_feature_importance(),
-    }).sort_values("importance", ascending=False)
+    importance = pd.DataFrame(
+        {
+            "feature": TABULAR,
+            "importance": model_full.feature_importances_,
+        }
+    ).sort_values("importance", ascending=False)
     importance.to_csv("artifacts/reports/feature_importance.csv", index=False)
     print("\n  Top-10 features:")
     for _, row in importance.head(10).iterrows():
@@ -176,11 +212,9 @@ def main() -> None:
     if HAS_SHAP:
         try:
             sample = frame_full.sample(min(500, len(frame_full)), random_state=42)
-            feat = prep_for_cat(sample)
-            from catboost import Pool
-            cat_idx = [TABULAR.index(c) for c in CATS]
-            pool = Pool(feat, cat_features=cat_idx)
-            shap_values = model_full.get_feature_importance(pool, type="ShapValues")[:, :-1]
+            feat = prep_for_cat(sample, getattr(model_full, "_crocs_fill_values", None))
+            explainer = shap.TreeExplainer(model_full)
+            shap_values = explainer.shap_values(feat)
             plt.figure(figsize=(10, 8))
             shap.summary_plot(shap_values, feat, feature_names=TABULAR, show=False, max_display=20)
             plt.tight_layout()

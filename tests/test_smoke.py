@@ -2,7 +2,7 @@ from crocs import __version__
 from crocs.config import Settings
 from crocs.domain.models import FORECAST_COLUMNS
 from crocs.ml.features import add_calendar_features, build_supervised_frame
-from crocs.ml.production import CATS, TABULAR, upcoming_break_days
+from crocs.ml.production import CATS, LAG_DAYS, ROLLING_MEAN_WINDOWS, TABULAR, upcoming_break_days
 from crocs.ml.weather import add_weather_features, parse_pogodaiklimat_archive
 
 
@@ -48,41 +48,33 @@ def test_russian_holiday_features_for_may_2026():
 
 
 def test_production_feature_set():
-    """Production использует 39 фич, 8 категориальных для CatBoost target-encoding."""
-    # Лаги — основа модели
+    """Production uses the lean LightGBM Kaggle feature set."""
     assert "lag_7d" in TABULAR
     assert "lag_14d" in TABULAR
-    assert "lag_28d" in TABULAR
-    assert "lag_364d" in TABULAR
-    assert "rolling_7d_mean" in TABULAR
-    assert "rolling_28d_mean" in TABULAR
-    assert "rolling_7d_to_28d_ratio" in TABULAR
+    assert LAG_DAYS == [1, 7, 14]
+    assert ROLLING_MEAN_WINDOWS == [7, 30]
+    assert "rolling_mean_7d" in TABULAR
+    assert "rolling_mean_30d" in TABULAR
+    assert "rolling_std_7d" in TABULAR
 
-    # Праздники
-    assert "is_ru_public_holiday" in TABULAR
-    assert "is_may_day_block" in TABULAR
-    assert "days_to_next_ru_holiday" in TABULAR
+    assert "is_ru_holiday_non_working" in TABULAR
+    assert "holiday_may_day" in TABULAR
+    assert "holiday_victory_day" in TABULAR
 
-    # Break-days (новые фичи)
-    assert "upcoming_break_days" in TABULAR
-    assert "past_break_days" in TABULAR
-    assert "is_bridge_day" in TABULAR
+    assert "temp_c" in TABULAR
+    assert "precipitation_mm" in TABULAR
 
-    # Lagged weather (без data leakage)
-    assert "weather_temp_lag_7d" in TABULAR
-    assert "weather_precip_lag_7d" in TABULAR
+    assert "diff_roll_7d_30d" in TABULAR
+    assert "hour_sin" in TABULAR
+    assert "dow_cos" in TABULAR
 
-    # Категориальные (8 шт)
-    assert len(CATS) == 8
-    assert "day_of_week" in CATS
-    assert "sale_hour" in CATS
-    assert "holiday_name_code" in CATS
-    assert "upcoming_break_days" in CATS
+    assert CATS == []
 
 
 def test_upcoming_break_days_calendar():
     """Календарь bridge-дней корректно расставлен для 2024-2026."""
     import pandas as pd
+
     # 2025-04-30 → впереди 4-дневный weekend (May 1-4)
     assert upcoming_break_days(pd.Timestamp("2025-04-30")) == 4
     # 2026-04-30 → впереди 3-дневный weekend (May 1-3)
@@ -202,8 +194,8 @@ def test_pogodaiklimat_parser_converts_utc_to_moscow_hour():
     assert weather.loc[0, "is_weather_rain"] == 1
 
 
-def test_production_uses_catboost_mae():
-    """Production imports CatBoost MAE model helpers without data leakage."""
+def test_production_uses_lightgbm_mae():
+    """Production imports LightGBM MAE model helpers without data leakage."""
     from crocs.ml.production import run_forecast, train_model
 
     assert callable(run_forecast)
