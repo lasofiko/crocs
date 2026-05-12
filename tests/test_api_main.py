@@ -44,6 +44,7 @@ def test_pipeline_job_enqueue_returns_202(
             forecast=pd.DataFrame({"sale_date": [1], "sale_hour": [2], "guests_count": [3]}),
             warnings=["ok"],
             schedule=None,
+            labor_demand=None,
         )
 
     monkeypatch.setattr(api_main, "run_pipeline", fake_run_pipeline)
@@ -61,3 +62,6 @@ def test_pipeline_job_enqueue_returns_202(
     assert data["status"] == "done"
     assert data["forecast_row_count"] == 1
     assert data["warnings"] == ["ok"]
+    assert data["forecast_rows"] is not None and len(data["forecast_rows"]) == 1
+    assert data["schedule_rows"] == []
+    assert data["labor_demand_rows"] == []

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import threading
 import uuid
@@ -7,6 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
+import pandas as pd
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -17,11 +19,27 @@ from crocs.services.pipeline_service import run_pipeline
 JobStatus = Literal["pending", "running", "done", "error"]
 
 
+def _dataframe_json_records(df: pd.DataFrame | None) -> list[dict[str, Any]]:
+    """Сериализация таблицы для JSON (даты ISO, NaN → null)."""
+    if df is None or df.empty:
+        return []
+    blob = df.to_json(orient="records", date_format="iso")
+    return json.loads(blob)
+
+
 class ForecastPipelineResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
-    forecast_rows: list[dict[str, object]] = Field(
+    forecast_rows: list[dict[str, Any]] = Field(
         default_factory=list,
         description="Строки прогноза: sale_date, sale_hour, guests_count",
+    )
+    schedule_rows: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Смены: ds, station_key, employee_id, starttime, finishtime",
+    )
+    labor_demand_rows: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Потребность по слотам: ds, sale_hour, station_key, required_employees, assigned_employees",
     )
 
 
@@ -56,6 +74,19 @@ class PipelineJobStatusResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     forecast_row_count: int | None = None
     schedule_row_count: int | None = None
+    labor_demand_row_count: int | None = None
+    forecast_rows: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="Заполняется при status=done",
+    )
+    schedule_rows: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="Заполняется при status=done",
+    )
+    labor_demand_rows: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="Заполняется при status=done",
+    )
 
 
 _job_lock = threading.Lock()
@@ -106,11 +137,19 @@ def _run_pipeline_job(
             guests_source=guests_source,
         )
         sched_n = len(result.schedule) if result.schedule is not None else None
+        ld_n = len(result.labor_demand) if result.labor_demand is not None else None
+        forecast_rows = _dataframe_json_records(result.forecast)
+        schedule_rows = _dataframe_json_records(result.schedule)
+        labor_demand_rows = _dataframe_json_records(result.labor_demand)
         with _job_lock:
             _jobs[job_id]["status"] = "done"
             _jobs[job_id]["warnings"] = list(result.warnings)
             _jobs[job_id]["forecast_row_count"] = len(result.forecast)
             _jobs[job_id]["schedule_row_count"] = sched_n
+            _jobs[job_id]["labor_demand_row_count"] = ld_n
+            _jobs[job_id]["forecast_rows"] = forecast_rows
+            _jobs[job_id]["schedule_rows"] = schedule_rows
+            _jobs[job_id]["labor_demand_rows"] = labor_demand_rows
             _jobs[job_id]["detail"] = None
     except Exception as exc:
         with _job_lock:
@@ -198,7 +237,7 @@ def forecast_pipeline(
         ),
     ] = None,
 ) -> ForecastPipelineResponse:
-    """Запускает пайплайн прогноза гостей и возвращает таблицу прогноза."""
+    """Полный пайплайн (как CLI): прогноз, при включённом scheduling — расписание и labor demand в JSON + файлы в artifacts."""
     dd = _relative_path(data_dir)
     fd = _relative_path(forecast_input_dir)
     ad = _relative_path(artifacts_dir)
@@ -214,8 +253,12 @@ def forecast_pipeline(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    rows = result.forecast.to_dict(orient="records")
-    return ForecastPipelineResponse(warnings=result.warnings, forecast_rows=rows)
+    return ForecastPipelineResponse(
+        warnings=result.warnings,
+        forecast_rows=_dataframe_json_records(result.forecast),
+        schedule_rows=_dataframe_json_records(result.schedule),
+        labor_demand_rows=_dataframe_json_records(result.labor_demand),
+    )
 
 
 @app.post("/api/v1/pipeline/jobs", response_model=PipelineJobAccepted, status_code=202)
@@ -236,6 +279,10 @@ def enqueue_pipeline_job(
             "warnings": [],
             "forecast_row_count": None,
             "schedule_row_count": None,
+            "labor_demand_row_count": None,
+            "forecast_rows": None,
+            "schedule_rows": None,
+            "labor_demand_rows": None,
         }
     background_tasks.add_task(
         _run_pipeline_job,
@@ -262,6 +309,10 @@ def pipeline_job_status(job_id: str) -> PipelineJobStatusResponse:
         warnings=list(row.get("warnings") or []),
         forecast_row_count=row.get("forecast_row_count"),
         schedule_row_count=row.get("schedule_row_count"),
+        labor_demand_row_count=row.get("labor_demand_row_count"),
+        forecast_rows=row.get("forecast_rows"),
+        schedule_rows=row.get("schedule_rows"),
+        labor_demand_rows=row.get("labor_demand_rows"),
     )
 
 

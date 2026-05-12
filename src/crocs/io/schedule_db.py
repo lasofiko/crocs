@@ -150,6 +150,24 @@ def _ensure_labor_demand_assigned_column(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE labor_demand_rows ADD COLUMN assigned_employees INTEGER DEFAULT 0")
 
 
+def schedule_cache_debug_counts(db_path: Path) -> tuple[int, int]:
+    """
+    (число строк schedule_runs, число run_id с хотя бы одной сменой в schedule_assignments).
+    Если первое > второе — есть «пустые» прогоны (например, обрыв записи), из-за них кэш мог не находиться.
+    """
+    if not db_path.is_file():
+        return (0, 0)
+    conn = sqlite3.connect(str(db_path))
+    try:
+        total = int(conn.execute("SELECT COUNT(*) FROM schedule_runs").fetchone()[0])
+        with_slots = int(
+            conn.execute("SELECT COUNT(DISTINCT run_id) FROM schedule_assignments").fetchone()[0]
+        )
+        return (total, with_slots)
+    finally:
+        conn.close()
+
+
 def persist_schedule_run(
     db_path: Path,
     *,
@@ -216,72 +234,77 @@ def persist_schedule_run(
         if inputs_fingerprint is not None:
             meta_out["inputs_fingerprint"] = inputs_fingerprint
 
-        cur = conn.execute(
-            "INSERT INTO schedule_runs (created_at, forecast_digest, meta_json, cache_key, inputs_fingerprint) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (
-                _utc_now_iso(),
-                forecast_digest,
-                json.dumps(meta_out, ensure_ascii=False),
-                cache_key,
-                inputs_fingerprint,
-            ),
-        )
-        run_id = int(cur.lastrowid)
-
-        if not schedule_df.empty:
-            rows = []
-            for _, r in schedule_df.iterrows():
-                rows.append(
-                    (
-                        run_id,
-                        str(r.get("ds", "")),
-                        str(r.get("station_key", "")),
-                        str(r.get("employee_id", "")),
-                        str(r.get("starttime", "")),
-                        str(r.get("finishtime", "")),
-                    )
-                )
-            conn.executemany(
-                """INSERT INTO schedule_assignments
-                (run_id, ds, station_key, employee_id, starttime, finishtime)
-                VALUES (?, ?, ?, ?, ?, ?)""",
-                rows,
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            cur = conn.execute(
+                "INSERT INTO schedule_runs (created_at, forecast_digest, meta_json, cache_key, inputs_fingerprint) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    _utc_now_iso(),
+                    forecast_digest,
+                    json.dumps(meta_out, ensure_ascii=False),
+                    cache_key,
+                    inputs_fingerprint,
+                ),
             )
+            run_id = int(cur.lastrowid)
 
-        if labor_demand_df is not None and not labor_demand_df.empty:
-            ld = labor_demand_df.copy()
-            ld.columns = [str(c).strip().lower() for c in ld.columns]
-            if "ds" in ld.columns:
-                ld["_ds"] = pd.to_datetime(ld["ds"], errors="coerce").astype(str)
-            else:
-                ld["_ds"] = ""
-            rows2 = []
-            has_asn = "assigned_employees" in ld.columns
-            for _, r in ld.iterrows():
-                asn_raw = r["assigned_employees"] if has_asn else 0
-                asn_v = int(asn_raw) if pd.notna(asn_raw) else 0
-                rows2.append(
-                    (
-                        run_id,
-                        str(r.get("_ds", "")),
-                        int(r["sale_hour"]) if pd.notna(r.get("sale_hour")) else 0,
-                        str(r.get("station_key", "")),
-                        int(r["required_employees"])
-                        if pd.notna(r.get("required_employees"))
-                        else 0,
-                        asn_v,
+            if not schedule_df.empty:
+                rows = []
+                for _, r in schedule_df.iterrows():
+                    rows.append(
+                        (
+                            run_id,
+                            str(r.get("ds", "")),
+                            str(r.get("station_key", "")),
+                            str(r.get("employee_id", "")),
+                            str(r.get("starttime", "")),
+                            str(r.get("finishtime", "")),
+                        )
                     )
+                conn.executemany(
+                    """INSERT INTO schedule_assignments
+                    (run_id, ds, station_key, employee_id, starttime, finishtime)
+                    VALUES (?, ?, ?, ?, ?, ?)""",
+                    rows,
                 )
-            conn.executemany(
-                """INSERT INTO labor_demand_rows
-                (run_id, ds, sale_hour, station_key, required_employees, assigned_employees)
-                VALUES (?, ?, ?, ?, ?, ?)""",
-                rows2,
-            )
 
-        conn.commit()
-        return run_id
+            if labor_demand_df is not None and not labor_demand_df.empty:
+                ld = labor_demand_df.copy()
+                ld.columns = [str(c).strip().lower() for c in ld.columns]
+                if "ds" in ld.columns:
+                    ld["_ds"] = pd.to_datetime(ld["ds"], errors="coerce").astype(str)
+                else:
+                    ld["_ds"] = ""
+                rows2 = []
+                has_asn = "assigned_employees" in ld.columns
+                for _, r in ld.iterrows():
+                    asn_raw = r["assigned_employees"] if has_asn else 0
+                    asn_v = int(asn_raw) if pd.notna(asn_raw) else 0
+                    rows2.append(
+                        (
+                            run_id,
+                            str(r.get("_ds", "")),
+                            int(r["sale_hour"]) if pd.notna(r.get("sale_hour")) else 0,
+                            str(r.get("station_key", "")),
+                            int(r["required_employees"])
+                            if pd.notna(r.get("required_employees"))
+                            else 0,
+                            asn_v,
+                        )
+                    )
+                conn.executemany(
+                    """INSERT INTO labor_demand_rows
+                    (run_id, ds, sale_hour, station_key, required_employees, assigned_employees)
+                    VALUES (?, ?, ?, ?, ?, ?)""",
+                    rows2,
+                )
+
+            conn.commit()
+            return run_id
+        except Exception:
+            conn.rollback()
+            raise
     finally:
         conn.close()
 
@@ -320,13 +343,23 @@ def try_load_cached_schedule(
         _ensure_labor_demand_assigned_column(conn)
         match_kind: Literal["exact", "inputs_fingerprint"] = "exact"
         row = conn.execute(
-            "SELECT id FROM schedule_runs WHERE cache_key = ? ORDER BY id DESC LIMIT 1",
+            """
+            SELECT sr.id FROM schedule_runs sr
+            WHERE sr.cache_key = ?
+              AND EXISTS (SELECT 1 FROM schedule_assignments sa WHERE sa.run_id = sr.id LIMIT 1)
+            ORDER BY sr.id DESC LIMIT 1
+            """,
             (cache_key,),
         ).fetchone()
         if row is None and inputs_fingerprint:
             row = conn.execute(
-                "SELECT id FROM schedule_runs WHERE inputs_fingerprint = ? "
-                "AND inputs_fingerprint IS NOT NULL ORDER BY id DESC LIMIT 1",
+                """
+                SELECT sr.id FROM schedule_runs sr
+                WHERE sr.inputs_fingerprint = ?
+                  AND sr.inputs_fingerprint IS NOT NULL
+                  AND EXISTS (SELECT 1 FROM schedule_assignments sa WHERE sa.run_id = sr.id LIMIT 1)
+                ORDER BY sr.id DESC LIMIT 1
+                """,
                 (inputs_fingerprint,),
             ).fetchone()
             if row is not None:
