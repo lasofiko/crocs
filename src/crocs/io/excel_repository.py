@@ -19,7 +19,13 @@ def _write_xlsx(df: pd.DataFrame, path: Path, columns: tuple[str, ...], label: s
     missing = set(columns) - set(df.columns)
     if missing:
         raise ValueError(f"{label}: missing columns {sorted(missing)}")
-    df[list(columns)].to_excel(path, index=False, engine="openpyxl")
+    try:
+        df[list(columns)].to_excel(path, index=False, engine="openpyxl")
+    except PermissionError as exc:
+        raise PermissionError(
+            f"{label}: не удалось записать {path.resolve()} — файл занят (часто открыт в Excel) или нет прав. "
+            "Закройте книгу и повторите запуск."
+        ) from exc
 
 
 def write_forecast_xlsx(df: pd.DataFrame, path: Path) -> None:

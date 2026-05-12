@@ -268,6 +268,38 @@ def run_pipeline(
             demand_df = demand_df.copy()
             demand_df["assigned_employees"] = 0
 
+    dbp = rt.schedule_db_path
+    if (
+        sch.enabled
+        and not schedule_from_db
+        and schedule_df is not None
+        and not schedule_df.empty
+        and dbp is not None
+        and cache_key is not None
+    ):
+        try:
+            rid = persist_schedule_run(
+                dbp,
+                forecast_digest=digest_fc,
+                schedule_df=schedule_df,
+                labor_demand_df=demand_df,
+                cache_key=cache_key,
+                inputs_fingerprint=inputs_fp,
+                meta={
+                    "guests_source": src,
+                    "schedule_solver": "cp_sat_lns" if sch.lns_enabled else "cp_sat",
+                    "forecast_rows": len(forecast_df),
+                    "schedule_rows": len(schedule_df),
+                    "labor_demand_rows": len(demand_df) if demand_df is not None else 0,
+                    "from_db_cache": False,
+                },
+            )
+            warnings.append(
+                f"schedule_db: сохранён прогон run_id={rid} в {dbp.resolve()} (до экспорта xlsx — кэш не теряется при блокировке файлов).",
+            )
+        except Exception as exc:
+            warnings.append(f"schedule_db: не удалось записать: {exc}")
+
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     out_forecast = artifacts_dir / settings.outputs.forecast
     _stage(f"Запись {settings.outputs.forecast} в {artifacts_dir.resolve()}...")
@@ -296,29 +328,6 @@ def run_pipeline(
         out_cov = artifacts_dir / settings.outputs.coverage_report
         _stage(f"Запись {settings.outputs.coverage_report}...")
         write_coverage_report_xlsx(cov_df, out_cov)
-
-        dbp = rt.schedule_db_path
-        if dbp is not None and not schedule_from_db:
-            try:
-                rid = persist_schedule_run(
-                    dbp,
-                    forecast_digest=digest_fc,
-                    schedule_df=schedule_df,
-                    labor_demand_df=demand_df,
-                    cache_key=cache_key,
-                    inputs_fingerprint=inputs_fp,
-                    meta={
-                        "guests_source": src,
-                        "schedule_solver": "cp_sat_lns" if sch.lns_enabled else "cp_sat",
-                        "forecast_rows": len(forecast_df),
-                        "schedule_rows": len(schedule_df),
-                        "labor_demand_rows": len(demand_df) if demand_df is not None else 0,
-                        "from_db_cache": False,
-                    },
-                )
-                warnings.append(f"schedule_db: сохранён прогон run_id={rid} в {dbp.resolve()}.")
-            except Exception as exc:
-                warnings.append(f"schedule_db: не удалось записать: {exc}")
 
     figures_dir = artifacts_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
