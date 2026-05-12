@@ -105,6 +105,7 @@
 
 .zone-card--hall {
     grid-area: hall;
+    margin-top: 15px;
     background: linear-gradient(165deg, #f0fff2 0%, #e4f8e8 100%);
     box-shadow:
         0 4px 14px rgb(80 160 100 / 14%),
