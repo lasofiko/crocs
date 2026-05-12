@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.pyright/
+.mypy_cache/
+experiments/
+.claude/
+
+# IDE
+.idea/
+.vscode/
+
+# Raw case data
+data/raw/*.csv
+data/raw/*.xlsx
+# Generated data and artifacts
+data/interim/*
+data/processed/*
+data/output/*
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+!data/output/.gitkeep
+artifacts/*.xlsx
+artifacts/**/*.png
+artifacts/**/*.mp4
+artifacts/**/*.json
+*.parquet
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+Thumbs.db
+.DS_Store

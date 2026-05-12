@@ -1,0 +1,82 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "crocs"
+version = "0.1.0"
+description = "Guest forecasting (ML) and restaurant staff scheduling (OR-Tools CP-SAT)."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ipykernel>=7.2.0",
+    "lightgbm>=4.6.0",
+    "matplotlib>=3.10.9",
+    "nbclient>=0.10.4",
+    "nbformat>=5.10.4",
+    "numpy>=2.1.0",
+    "openpyxl>=3.1.0",
+    "optuna>=4.0.0",
+    "ortools>=9.11.0",
+    "pandas>=2.2.0",
+    "python-dateutil>=2.9.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.5.0",
+    "pyyaml>=6.0.0",
+    "rich>=13.8.0",
+    "catboost>=1.2.8",
+    "scikit-learn>=1.5.0",
+    "seaborn>=0.13.2",
+    "typer>=0.12.0",
+    "xgboost>=2.1.0",
+    "prophet>=1.3.0",
+    "statsmodels>=0.14.6",
+    "shap>=0.51.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+]
+
+[project.scripts]
+crocs = "crocs.cli:main"
+crocs-run = "crocs.cli:main"
+crocs-api = "crocs.api.app:run"
+crocs-api-main = "crocs.api.main:run_server"
+
+[project.optional-dependencies]
+redis = ["redis>=5.0.0"]
+pulp = ["pulp>=2.8.0"]
+dev = [
+    "pyright>=1.1.380",
+    "pytest>=8.3.0",
+    "ruff>=0.6.0",
+]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.380",
+    "pytest>=8.3.0",
+    "ruff>=0.6.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/crocs"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/crocs/services/staffing_dashboard.py" = ["RUF001", "RUF002", "E501", "RUF005"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+include = ["src", "scripts", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
