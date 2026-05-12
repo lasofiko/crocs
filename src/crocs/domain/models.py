@@ -9,7 +9,6 @@ LABOR_DEMAND_COLUMNS = ("ds", "sale_hour", "station_key", "required_employees", 
 SCHEDULE_COLUMNS = ("ds", "station_key", "employee_id", "starttime", "finishtime")
 COVERAGE_REPORT_COLUMNS = ("ds", "station_key", "employee_id", "issue_type", "details")
 
-
 @dataclass
 class RawDataBundle:
     train: pd.DataFrame | None
