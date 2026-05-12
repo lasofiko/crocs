@@ -20,6 +20,7 @@ class RawDataBundle:
     shifts: pd.DataFrame | None
 
 
+
 @dataclass
 class PipelineResult:
     forecast: pd.DataFrame
