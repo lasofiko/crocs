@@ -24,6 +24,7 @@ from crocs.io.schedule_db import (
     compute_schedule_cache_key,
     compute_schedule_inputs_fingerprint,
     persist_schedule_run,
+    schedule_cache_debug_counts,
     try_load_cached_schedule,
 )
 from crocs.services.forecast_service import run_forecast
@@ -203,6 +204,10 @@ def run_pipeline(
                     if demand_cached is not None and not demand_cached.empty:
                         demand_df = demand_cached
                     schedule_from_db = True
+                    kind_ru = "точное совпадение ключа" if hit.match_kind == "exact" else "совпадение входов (другой сценарий солвера)"
+                    _stage(
+                        f"Кэш SQLite: загружено из БД (run_id={rid}, {kind_ru}), CP-SAT/LNS пропускаются.",
+                    )
                     if hit.match_kind == "exact":
                         warnings.append(
                             f"schedule_cache: расписание и спрос из БД (run_id={rid}), CP-SAT/LNS не вызывались.",
@@ -214,10 +219,19 @@ def run_pipeline(
                         )
                 else:
                     if not dbp.is_file():
+                        _stage(
+                            f"Кэш SQLite: файла БД ещё нет ({dbp.resolve()}) — после успешного прогона появится кэш.",
+                        )
                         warnings.append(
                             f"schedule_cache: файла БД ещё нет ({dbp.resolve()}) — после первого успешного прогона с записью в БД появится кэш.",
                         )
                     else:
+                        total_runs, with_slots = schedule_cache_debug_counts(dbp)
+                        _stage(
+                            f"Кэш SQLite: промах (БД {dbp.resolve()}, прогонов={total_runs}, с сменами={with_slots}). "
+                            "Будет CP-SAT/LNS. Если прогонов больше чем «с сменами» — в БД были «пустые» записи (старый баг); "
+                            "сейчас сохранение атомарное.",
+                        )
                         warnings.append(
                             "schedule_cache: промах — нет run ни по полному cache_key, ни по отпечатку входов "
                             "(inputs_fingerprint): изменились прогноз, сырьё, спрос, структурные ограничения scheduling "
