@@ -1,3 +1,30 @@
+# Анимация расписания (`schedule-animation`)
+
+Фронт читает **те же сущности, что и пайплайн crocs**, из статики Vite — каталог **`public/`** (URL вида `/schedule.xlsx` от корня приложения).
+
+## Откуда брать файлы (чтобы данные совпадали с прогоном crocs)
+
+После успешного `python -m crocs` (или эквивалента) скопируйте из **`artifacts/`** в **`schedule-animation/public/`**:
+
+| Файл в `public/` | Источник в репозитории | Назначение |
+|------------------|------------------------|------------|
+| **`schedule.xlsx`** | `artifacts/schedule.xlsx` | Смены: `ds`, `station_key`, `employee_id`, `starttime`, `finishtime` |
+| **`forecast.xlsx`** | `artifacts/forecast.xlsx` | Гости по часу: `sale_date`, `sale_hour`, `guests_count` |
+| **`staffing_requirements.xlsx`** | свой норматив / экспорт (если используете) | Нормы и опционально посетители по слоту |
+
+**PowerShell** (из корня репозитория `crocs`):
+
+```powershell
+Copy-Item -Force artifacts\forecast.xlsx schedule-animation\public\forecast.xlsx
+Copy-Item -Force artifacts\schedule.xlsx schedule-animation\public\schedule.xlsx
+```
+
+Без **`forecast.xlsx`** в `public/` число гостей в шапке может заполняться из колонок staffing или стабильным запасным значением по слоту.
+
+При **`npm run dev`** запросы **`/api/...`** проксируются на бэкенд crocs (`vite.config.ts`, по умолчанию `http://127.0.0.1:8000`). Для режима «только статика» достаточно файлов в `public/`.
+
+---
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

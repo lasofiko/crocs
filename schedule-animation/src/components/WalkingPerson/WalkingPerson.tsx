@@ -27,6 +27,8 @@ export type WalkingPersonProps = {
     labelTitle?: string;
     /** Цвет «футболки» пастельный */
     shirtColor?: string;
+    /** Уже был на точке в прошлом часу и остаётся — не уходит, только «танец» на месте */
+    persistOnStation?: boolean;
 };
 
 function lerp(a: number, b: number, t: number): number {
@@ -64,6 +66,7 @@ export function WalkingPerson({
     label,
     labelTitle,
     shirtColor = '#8ec5f0',
+    persistOnStation = false,
 }: WalkingPersonProps) {
     const fromX = fromXProp ?? targetX - 80;
     const fromY = fromYProp ?? targetY;
@@ -71,6 +74,10 @@ export function WalkingPerson({
     const exitY = exitYProp ?? fromY;
 
     const state = useMemo(() => {
+        if (persistOnStation) {
+            return { visible: true, x: targetX, y: targetY, walking: false };
+        }
+
         const walkInStart = arrivalTimeMs - walkDurationMs;
         const walkOutEnd = departureTimeMs + walkDurationMs;
 
@@ -117,6 +124,7 @@ export function WalkingPerson({
         exitX,
         exitY,
         walkDurationMs,
+        persistOnStation,
     ]);
 
     if (!state.visible) {

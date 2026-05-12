@@ -50,21 +50,46 @@ function toRequiredInt(v: unknown): number | undefined {
     return undefined;
 }
 
+function toGuestsInt(v: unknown): number | undefined {
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) {
+        return Math.round(v);
+    }
+    const n = parseFloat(String(v).trim().replace(',', '.'));
+    if (Number.isFinite(n) && n >= 0) return Math.round(n);
+    return undefined;
+}
+
 /** Ключ: `YYYY-MM-DD|hour|STATION` (станция в верхнем регистре). */
 export function staffingRequirementLookupKey(dateIso: string, hour: number, station: string): string {
     return `${dateIso}|${hour}|${station.trim().toUpperCase()}`;
 }
 
+function dateHourKey(dateIso: string, hour: number): string {
+    return `${dateIso}|${hour}`;
+}
+
+export type StaffingRequirementsParse = {
+    requiredByKey: Map<string, number>;
+    /** Явные посетители за час из той же таблицы (колонка guests / посетители и т.д.). */
+    explicitVisitorsByDateHour: Map<string, number>;
+};
+
 /**
- * Первый лист: дата/ds, час/hour, station_key, требуемое_число_работников (или близкие имена колонок).
+ * Первый лист: дата/ds, час, station_key, требуемое_число_работников;
+ * опционально колонка посетителей (для шапки, если нет отдельного forecast.xlsx).
  */
-export function parseStaffingRequirementsMap(buffer: ArrayBuffer): Map<string, number> {
+export function parseStaffingRequirementsFull(buffer: ArrayBuffer): StaffingRequirementsParse {
     const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
     const name = wb.SheetNames[0];
-    if (!name) return new Map();
+    const requiredByKey = new Map<string, number>();
+    const explicitVisitorsByDateHour = new Map<string, number>();
+
+    if (!name) {
+        return { requiredByKey, explicitVisitorsByDateHour };
+    }
+
     const sheet = wb.Sheets[name];
     const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
-    const map = new Map<string, number>();
 
     for (const row of raw) {
         const ds = pick(row, ['ds', 'date', 'дата', 'day', 'sale_date']);
@@ -78,38 +103,64 @@ export function parseStaffingRequirementsMap(buffer: ArrayBuffer): Map<string, n
             'ideal_staff',
             'norm',
         ]);
+        const guestsRaw = pick(row, [
+            'guests_count',
+            'guests',
+            'посетители',
+            'количество_посетителей',
+            'visitors_count',
+            'visitors',
+            'guests_count_hour',
+            'ожидаемые_посетители',
+        ]);
 
         if (ds === undefined || station === undefined) continue;
         const dateStr = toDateStr(ds);
         const hour = toHourInt(hourRaw);
+        if (hour === undefined) continue;
+
+        const dh = dateHourKey(dateStr, hour);
+        const guests = toGuestsInt(guestsRaw);
+        if (guests !== undefined && guests > 0) {
+            explicitVisitorsByDateHour.set(dh, Math.max(explicitVisitorsByDateHour.get(dh) ?? 0, guests));
+        }
+
         const required = toRequiredInt(req);
-        if (hour === undefined || required === undefined) continue;
+        if (required === undefined) continue;
 
         const key = staffingRequirementLookupKey(dateStr, hour, String(station).trim());
-        map.set(key, required);
+        requiredByKey.set(key, required);
     }
 
-    return map;
+    return { requiredByKey, explicitVisitorsByDateHour };
 }
 
-/** Подставляет «норму» из staffing requirements; индикатор пустой — тон считает `staffingTone` по факту/норме. */
+export function parseStaffingRequirementsMap(buffer: ArrayBuffer): Map<string, number> {
+    return parseStaffingRequirementsFull(buffer).requiredByKey;
+}
+
+/** Только нормы по станциям из staffing; посетители — через `forecast.xlsx` или колонку в staffing (см. scheduleApi). */
 export function applyStaffingRequirementsToItems(
     items: AnimationScheduleItem[],
     staffingBuffer: ArrayBuffer,
 ): AnimationScheduleItem[] {
-    const reqMap = parseStaffingRequirementsMap(staffingBuffer);
-    if (reqMap.size === 0) return items;
+    const { requiredByKey } = parseStaffingRequirementsFull(staffingBuffer);
+    if (requiredByKey.size === 0) {
+        return items;
+    }
 
     return items.map((item) => {
-        const key = staffingRequirementLookupKey(item.date, item.hour, item.station);
-        const required = reqMap.get(key);
-        if (required === undefined) {
-            return item;
-        }
+        const reqKey = staffingRequirementLookupKey(item.date, item.hour, item.station);
+        const required = requiredByKey.get(reqKey);
         const atStationCount =
             item.atStationCount !== undefined && Number.isFinite(item.atStationCount)
                 ? item.atStationCount
                 : item.employeeIds.length;
+
+        if (required === undefined) {
+            return { ...item, atStationCount };
+        }
+
         return {
             ...item,
             expectedPeopleCount: required,

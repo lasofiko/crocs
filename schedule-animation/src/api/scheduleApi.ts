@@ -3,7 +3,11 @@ import { dedupeScheduleRows } from '../utils/dedupeScheduleRows';
 import { parseScheduleAnimationPageJson } from '../utils/parseScheduleAnimationJson';
 import { parseScheduleCsv } from '../utils/parseScheduleCsv';
 import { parseScheduleXlsxToAnimation } from '../utils/parseScheduleXlsx';
-import { applyStaffingRequirementsToItems } from '../utils/parseStaffingRequirementsXlsx';
+import {
+    applyStaffingRequirementsToItems,
+    parseStaffingRequirementsFull,
+} from '../utils/parseStaffingRequirementsXlsx';
+import { mergeForecastGuestsIntoItems, parseForecastGuestsByDateHour } from '../utils/parseForecastGuestsXlsx';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -14,6 +18,7 @@ function publicBaseUrl(): string {
 }
 
 let staffingBufferMemo: ArrayBuffer | null | undefined;
+let forecastBufferMemo: ArrayBuffer | null | undefined;
 
 async function loadPublicStaffingBufferOnce(): Promise<ArrayBuffer | null> {
     if (staffingBufferMemo !== undefined) {
@@ -28,14 +33,85 @@ async function loadPublicStaffingBufferOnce(): Promise<ArrayBuffer | null> {
     return staffingBufferMemo;
 }
 
-/** Подмешивает норму из `public/staffing_requirements.xlsx`, если файл есть. */
+async function loadPublicForecastBufferOnce(): Promise<ArrayBuffer | null> {
+    if (forecastBufferMemo !== undefined) {
+        return forecastBufferMemo;
+    }
+    try {
+        const res = await fetch(`${publicBaseUrl()}forecast.xlsx`);
+        forecastBufferMemo = res.ok ? await res.arrayBuffer() : null;
+    } catch {
+        forecastBufferMemo = null;
+    }
+    return forecastBufferMemo;
+}
+
+/** Если из Excel нет числа — стабильное «рандомное» по слоту дата|час (45…280). */
+function fallbackVisitorsCount(seedKey: string): number {
+    let h = 2_166_136_261;
+    for (let i = 0; i < seedKey.length; i += 1) {
+        h ^= seedKey.charCodeAt(i);
+        h = Math.imul(h, 16_777_619);
+    }
+    return 45 + (Math.abs(h) % 236);
+}
+
+function ensureVisitorsOnItems(items: AnimationScheduleItem[]): AnimationScheduleItem[] {
+    return items.map((it) => {
+        if (it.visitorsCount !== undefined && Number.isFinite(it.visitorsCount) && it.visitorsCount > 0) {
+            return it;
+        }
+        const key = `${it.date}|${it.hour}`;
+        return { ...it, visitorsCount: fallbackVisitorsCount(key) };
+    });
+}
+
+/** Посетители: приоритет `public/forecast.xlsx` (crocs: sale_date, sale_hour, guests_count), иначе колонка в staffing. */
+export async function attachPublicVisitorsFromTables(
+    items: AnimationScheduleItem[],
+): Promise<AnimationScheduleItem[]> {
+    if (items.length === 0) return items;
+
+    let merged = items;
+
+    const fBuf = await loadPublicForecastBufferOnce();
+    if (fBuf) {
+        const byHour = parseForecastGuestsByDateHour(fBuf);
+        if (byHour.size > 0) {
+            merged = mergeForecastGuestsIntoItems(items, fBuf);
+        }
+    }
+
+    const sBuf = await loadPublicStaffingBufferOnce();
+    if (sBuf) {
+        const { explicitVisitorsByDateHour } = parseStaffingRequirementsFull(sBuf);
+        if (explicitVisitorsByDateHour.size > 0) {
+            merged = merged.map((it) => {
+                const hasVisitors =
+                    it.visitorsCount !== undefined &&
+                    Number.isFinite(it.visitorsCount) &&
+                    it.visitorsCount > 0;
+                if (hasVisitors) return it;
+                const v = explicitVisitorsByDateHour.get(`${it.date}|${it.hour}`);
+                if (v !== undefined && v > 0) {
+                    return { ...it, visitorsCount: v };
+                }
+                return it;
+            });
+        }
+    }
+
+    return ensureVisitorsOnItems(merged);
+}
+
+/** Нормы из staffing + посетители из forecast.xlsx или колонки в staffing. */
 export async function attachPublicStaffingRequirements(
     items: AnimationScheduleItem[],
 ): Promise<AnimationScheduleItem[]> {
     if (items.length === 0) return items;
     const buf = await loadPublicStaffingBufferOnce();
-    if (!buf) return items;
-    return applyStaffingRequirementsToItems(items, buf);
+    const withNorms = buf ? applyStaffingRequirementsToItems(items, buf) : items;
+    return attachPublicVisitorsFromTables(withNorms);
 }
 
 /**

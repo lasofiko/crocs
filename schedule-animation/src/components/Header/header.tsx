@@ -1,9 +1,30 @@
+import { useMemo } from 'react';
 import './header.css';
 import type { HeaderProps } from '../../types/header';
 import { WEEKDAY_SHORT_RU } from '../../utils/scheduleFormat';
 
+/** Мок посетителей по дню и строке часа (стабильно на слайде, выглядит «рандомно» по часам). */
+function mockVisitorsCount(activeDay: number, time: string): number {
+    const hourMatch = /^(\d{1,2})/.exec(time.trim());
+    const hour = hourMatch ? Math.min(23, Math.max(0, parseInt(hourMatch[1], 10))) : 12;
+    let h = 2_166_136_261;
+    const seed = `${activeDay}|${hour}|${time}`;
+    for (let i = 0; i < seed.length; i += 1) {
+        h ^= seed.charCodeAt(i);
+        h = Math.imul(h, 16_777_619);
+    }
+    return 52 + (Math.abs(h) % 229);
+}
+
 function Header({ activeDay, time, visitorsCount, onSelectDay }: HeaderProps) {
-    const peopleLabel = Number.isFinite(visitorsCount) && visitorsCount > 0 ? `${visitorsCount} чел.` : '—';
+    const displayCount = useMemo(() => {
+        if (visitorsCount !== undefined && Number.isFinite(visitorsCount) && visitorsCount > 0) {
+            return visitorsCount;
+        }
+        return mockVisitorsCount(activeDay, time);
+    }, [activeDay, time, visitorsCount]);
+
+    const peopleLabel = displayCount > 0 ? `${displayCount} чел.` : '—';
 
     return (
         <header className="header">
