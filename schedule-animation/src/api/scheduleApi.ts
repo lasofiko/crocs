@@ -2,10 +2,57 @@ import type { AnimationScheduleItem, ScheduleAnimationPageResponse } from '../ty
 import { dedupeScheduleRows } from '../utils/dedupeScheduleRows';
 import { parseScheduleAnimationPageJson } from '../utils/parseScheduleAnimationJson';
 import { parseScheduleCsv } from '../utils/parseScheduleCsv';
+import { parseScheduleXlsxToAnimation } from '../utils/parseScheduleXlsx';
+import { applyStaffingRequirementsToItems } from '../utils/parseStaffingRequirementsXlsx';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? '';
 
 const DEFAULT_PAGE_SIZE = Number(import.meta.env.VITE_SCHEDULE_PAGE_SIZE) || 150;
+
+function publicBaseUrl(): string {
+    return import.meta.env.BASE_URL.endsWith('/') ? import.meta.env.BASE_URL : `${import.meta.env.BASE_URL}/`;
+}
+
+let staffingBufferMemo: ArrayBuffer | null | undefined;
+
+async function loadPublicStaffingBufferOnce(): Promise<ArrayBuffer | null> {
+    if (staffingBufferMemo !== undefined) {
+        return staffingBufferMemo;
+    }
+    try {
+        const res = await fetch(`${publicBaseUrl()}staffing_requirements.xlsx`);
+        staffingBufferMemo = res.ok ? await res.arrayBuffer() : null;
+    } catch {
+        staffingBufferMemo = null;
+    }
+    return staffingBufferMemo;
+}
+
+/** Подмешивает норму из `public/staffing_requirements.xlsx`, если файл есть. */
+export async function attachPublicStaffingRequirements(
+    items: AnimationScheduleItem[],
+): Promise<AnimationScheduleItem[]> {
+    if (items.length === 0) return items;
+    const buf = await loadPublicStaffingBufferOnce();
+    if (!buf) return items;
+    return applyStaffingRequirementsToItems(items, buf);
+}
+
+/**
+ * Расписание из `public/schedule.xlsx` (crocs: ds, station_key, employee_id, starttime, finishtime).
+ * Если файла нет или он пустой — возвращает [].
+ */
+export async function tryLoadScheduleFromPublicXlsx(): Promise<AnimationScheduleItem[]> {
+    try {
+        const res = await fetch(`${publicBaseUrl()}schedule.xlsx`);
+        if (!res.ok) return [];
+        const buf = await res.arrayBuffer();
+        const items = parseScheduleXlsxToAnimation(buf);
+        return attachPublicStaffingRequirements(items);
+    } catch {
+        return [];
+    }
+}
 
 export type FetchSchedulePageParams = {
     page?: number;
@@ -111,6 +158,15 @@ export async function fetchScheduleExcel(): Promise<Blob> {
     }
 
     return response.blob();
+}
+
+/** Скачать тот же файл, что лежит в `public/schedule.xlsx` (если есть). */
+export async function fetchPublicScheduleXlsxBlob(): Promise<Blob> {
+    const res = await fetch(`${publicBaseUrl()}schedule.xlsx`);
+    if (!res.ok) {
+        throw new Error('No public/schedule.xlsx');
+    }
+    return res.blob();
 }
 
 export { DEFAULT_PAGE_SIZE };

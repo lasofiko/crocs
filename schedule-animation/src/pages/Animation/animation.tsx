@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import './animation.css';
-import { DEFAULT_PAGE_SIZE, fetchScheduleAnimationPage, fetchScheduleExcel } from '../../api/scheduleApi';
+import { DEFAULT_PAGE_SIZE, attachPublicStaffingRequirements, fetchScheduleAnimationPage, fetchScheduleExcel, fetchPublicScheduleXlsxBlob, tryLoadScheduleFromPublicXlsx } from '../../api/scheduleApi';
 import Header from '../../components/Header/header';
 import PlaybackBar, { type PlaybackSpeed } from '../../components/PlaybackBar/PlaybackBar';
 import WeekStationsBoard from '../../components/WeekStationsBoard/WeekStationsBoard';
@@ -107,6 +107,15 @@ function Animation() {
 
         (async () => {
             try {
+                const fromXlsx = await tryLoadScheduleFromPublicXlsx();
+                const fromFile = filterValidScheduleRows(fromXlsx);
+                if (!cancelled && fromFile.length > 0) {
+                    setScheduleData(dedupeScheduleRows(fromFile));
+                    setCurrentIndex(0);
+                    setFetchHint(null);
+                    return;
+                }
+
                 while (!cancelled) {
                     const res = await fetchScheduleAnimationPage({ page, pageSize: DEFAULT_PAGE_SIZE });
                     const valid = filterValidScheduleRows(res.items);
@@ -118,7 +127,7 @@ function Animation() {
                     }
 
                     if (merged.length > 0) {
-                        setScheduleData(merged);
+                        setScheduleData(await attachPublicStaffingRequirements(merged));
                         if (!seededIndex) {
                             setCurrentIndex(0);
                             seededIndex = true;
@@ -135,7 +144,10 @@ function Animation() {
 
                 if (!cancelled) {
                     const finalRows = dedupeScheduleRows(acc);
-                    if (finalRows.length === 0) {
+                    if (finalRows.length > 0) {
+                        setScheduleData(await attachPublicStaffingRequirements(finalRows));
+                        setFetchHint(null);
+                    } else {
                         setScheduleData([...MOCK_SCHEDULE_ANIMATION_ROWS]);
                         setCurrentIndex(0);
                         setFetchHint(
@@ -180,7 +192,7 @@ function Animation() {
     }, [isPaused, slideCount, currentIndex, currentSlide.hour, speedFactor]);
 
     const handleSaveSchedule = () => {
-        fetchScheduleExcel()
+        void fetchPublicScheduleXlsxBlob()
             .then((file) => {
                 const fileUrl = URL.createObjectURL(file);
                 const link = document.createElement('a');
@@ -190,7 +202,19 @@ function Animation() {
                 link.click();
                 URL.revokeObjectURL(fileUrl);
             })
-            .catch(() => {});
+            .catch(() => {
+                void fetchScheduleExcel()
+                    .then((file) => {
+                        const fileUrl = URL.createObjectURL(file);
+                        const link = document.createElement('a');
+
+                        link.href = fileUrl;
+                        link.download = 'schedule.xlsx';
+                        link.click();
+                        URL.revokeObjectURL(fileUrl);
+                    })
+                    .catch(() => {});
+            });
     };
 
     const handleSeek = (index: number) => {
