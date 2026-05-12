@@ -17,6 +17,18 @@ function publicBaseUrl(): string {
     return import.meta.env.BASE_URL.endsWith('/') ? import.meta.env.BASE_URL : `${import.meta.env.BASE_URL}/`;
 }
 
+/** Vite отдаёт файлы из `../artifacts/` (см. vite.config.ts); при отсутствии — из `public/`. */
+async function fetchWorkbookFromArtifactsOrPublic(
+    name: 'schedule.xlsx' | 'staffing_requirements.xlsx' | 'forecast.xlsx',
+): Promise<Response> {
+    const base = publicBaseUrl();
+    const fromArtifacts = await fetch(`${base}crocs-artifacts/${name}`);
+    if (fromArtifacts.ok) {
+        return fromArtifacts;
+    }
+    return fetch(`${base}${name}`);
+}
+
 let staffingBufferMemo: ArrayBuffer | null | undefined;
 let forecastBufferMemo: ArrayBuffer | null | undefined;
 
@@ -25,7 +37,7 @@ async function loadPublicStaffingBufferOnce(): Promise<ArrayBuffer | null> {
         return staffingBufferMemo;
     }
     try {
-        const res = await fetch(`${publicBaseUrl()}staffing_requirements.xlsx`);
+        const res = await fetchWorkbookFromArtifactsOrPublic('staffing_requirements.xlsx');
         staffingBufferMemo = res.ok ? await res.arrayBuffer() : null;
     } catch {
         staffingBufferMemo = null;
@@ -38,7 +50,7 @@ async function loadPublicForecastBufferOnce(): Promise<ArrayBuffer | null> {
         return forecastBufferMemo;
     }
     try {
-        const res = await fetch(`${publicBaseUrl()}forecast.xlsx`);
+        const res = await fetchWorkbookFromArtifactsOrPublic('forecast.xlsx');
         forecastBufferMemo = res.ok ? await res.arrayBuffer() : null;
     } catch {
         forecastBufferMemo = null;
@@ -66,7 +78,7 @@ function ensureVisitorsOnItems(items: AnimationScheduleItem[]): AnimationSchedul
     });
 }
 
-/** Посетители: приоритет `public/forecast.xlsx` (crocs: sale_date, sale_hour, guests_count), иначе колонка в staffing. */
+/** Посетители: приоритет `artifacts/forecast.xlsx` (dev), иначе `public/`; затем колонки в staffing. */
 export async function attachPublicVisitorsFromTables(
     items: AnimationScheduleItem[],
 ): Promise<AnimationScheduleItem[]> {
@@ -115,12 +127,12 @@ export async function attachPublicStaffingRequirements(
 }
 
 /**
- * Расписание из `public/schedule.xlsx` (crocs: ds, station_key, employee_id, starttime, finishtime).
- * Если файла нет или он пустой — возвращает [].
+ * Расписание из `artifacts/schedule.xlsx` (при `npm run dev` / `vite preview`) или из `public/schedule.xlsx`.
+ * Колонки crocs: ds, station_key, employee_id, starttime, finishtime.
  */
 export async function tryLoadScheduleFromPublicXlsx(): Promise<AnimationScheduleItem[]> {
     try {
-        const res = await fetch(`${publicBaseUrl()}schedule.xlsx`);
+        const res = await fetchWorkbookFromArtifactsOrPublic('schedule.xlsx');
         if (!res.ok) return [];
         const buf = await res.arrayBuffer();
         const items = parseScheduleXlsxToAnimation(buf);
@@ -236,11 +248,11 @@ export async function fetchScheduleExcel(): Promise<Blob> {
     return response.blob();
 }
 
-/** Скачать тот же файл, что лежит в `public/schedule.xlsx` (если есть). */
+/** Скачать `schedule.xlsx` из `artifacts/` (dev) или из `public/`. */
 export async function fetchPublicScheduleXlsxBlob(): Promise<Blob> {
-    const res = await fetch(`${publicBaseUrl()}schedule.xlsx`);
+    const res = await fetchWorkbookFromArtifactsOrPublic('schedule.xlsx');
     if (!res.ok) {
-        throw new Error('No public/schedule.xlsx');
+        throw new Error('schedule.xlsx не найден: положите в artifacts/ или schedule-animation/public/');
     }
     return res.blob();
 }

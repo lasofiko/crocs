@@ -1,27 +1,36 @@
 # Анимация расписания (`schedule-animation`)
 
-Фронт читает **те же сущности, что и пайплайн crocs**, из статики Vite — каталог **`public/`** (URL вида `/schedule.xlsx` от корня приложения).
+В режиме **`npm run dev`** и **`vite preview`** фронт **сначала** берёт таблицы из **`artifacts/`** в корне репозитория `crocs` (те же пути, что после пайплайна):
 
-## Откуда брать файлы (чтобы данные совпадали с прогоном crocs)
+- **`artifacts/schedule.xlsx`**
+- **`artifacts/staffing_requirements.xlsx`**
+- **`artifacts/forecast.xlsx`** (если есть — для гостей по часам)
 
-После успешного `python -m crocs` (или эквивалента) скопируйте из **`artifacts/`** в **`schedule-animation/public/`**:
+Vite отдаёт их по URL **`/crocs-artifacts/<имя файла>`** (см. `vite.config.ts`). Если файла в `artifacts/` нет, используется запасной вариант — **`schedule-animation/public/`** с тем же именем.
 
-| Файл в `public/` | Источник в репозитории | Назначение |
-|------------------|------------------------|------------|
-| **`schedule.xlsx`** | `artifacts/schedule.xlsx` | Смены: `ds`, `station_key`, `employee_id`, `starttime`, `finishtime` |
-| **`forecast.xlsx`** | `artifacts/forecast.xlsx` | Гости по часу: `sale_date`, `sale_hour`, `guests_count` |
-| **`staffing_requirements.xlsx`** | свой норматив / экспорт (если используете) | Нормы и опционально посетители по слоту |
+## Когда нужен `public/`
 
-**PowerShell** (из корня репозитория `crocs`):
+- **Статический хост** без Vite (например, только `dist/` на nginx): туда по-прежнему нужно положить копии xlsx **или** настроить прокси на `/crocs-artifacts/` → каталог `artifacts` на сервере.
+- Локально после **`npm run build`** без копирования в `public/` убедитесь, что **`vite preview`** используется с тем же конфигом (артефакты подхватятся).
+
+## Копирование в `public/` (опционально)
+
+Если нужен демо без файлов в `artifacts/`, можно скопировать из пайплайна в **`schedule-animation/public/`**:
+
+| Файл в `public/` | Типичный источник |
+|------------------|-------------------|
+| **`schedule.xlsx`** | `artifacts/schedule.xlsx` |
+| **`forecast.xlsx`** | `artifacts/forecast.xlsx` |
+| **`staffing_requirements.xlsx`** | свой норматив / `artifacts/…` |
+
+**PowerShell** (из корня `crocs`):
 
 ```powershell
 Copy-Item -Force artifacts\forecast.xlsx schedule-animation\public\forecast.xlsx
 Copy-Item -Force artifacts\schedule.xlsx schedule-animation\public\schedule.xlsx
 ```
 
-Без **`forecast.xlsx`** в `public/` число гостей в шапке может заполняться из колонок staffing или стабильным запасным значением по слоту.
-
-При **`npm run dev`** запросы **`/api/...`** проксируются на бэкенд crocs (`vite.config.ts`, по умолчанию `http://127.0.0.1:8000`). Для режима «только статика» достаточно файлов в `public/`.
+При **`npm run dev`** запросы **`/api/...`** проксируются на бэкенд crocs (`vite.config.ts`, по умолчанию `http://127.0.0.1:8000`).
 
 ---
 
