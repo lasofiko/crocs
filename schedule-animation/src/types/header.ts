@@ -1,7 +1,7 @@
 export type HeaderProps = {
-    day: string;
+    /** 1 = пн … 7 = вс */
+    activeDay: number;
     time: string;
-    onSaveSchedule: () => void;
-    /** Вне рабочих часов: затемнить весь экран, кроме времени и иконки часов */
-    screenDimmed?: boolean;
+    visitorsCount: number;
+    onSelectDay: (day: number) => void;
 };

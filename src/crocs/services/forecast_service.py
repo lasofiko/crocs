@@ -5,7 +5,6 @@ from datetime import date
 import pandas as pd
 
 from crocs.config import FORECAST_END, FORECAST_START, RESTAURANT_CLOSE_HOUR, RESTAURANT_OPEN_HOUR
-from crocs.ml.production import run_forecast as _run_production_forecast
 
 
 def run_forecast(
@@ -17,6 +16,9 @@ def run_forecast(
     close_hour: int | None = None,
     weather: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
+    # Ленивый импорт: CatBoost тянется только при ML-прогнозе, CLI/API стартуют без него.
+    from crocs.ml.production import run_forecast as _run_production_forecast
+
     return _run_production_forecast(
         train,
         forecast_start=forecast_start if forecast_start is not None else FORECAST_START,

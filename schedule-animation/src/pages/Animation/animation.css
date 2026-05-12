@@ -3,31 +3,221 @@
     flex-direction: column;
     min-height: 100vh;
     position: relative;
-    padding-top: 120px;
     box-sizing: border-box;
     isolation: isolate;
+    background: #faf3e6;
 }
 
-.animation .header {
-    z-index: 0;
+.animation__header-band {
+    flex-shrink: 0;
+    background: #faf3e6;
+    box-shadow: 0 10px 28px rgb(50 35 25 / 10%);
+}
+
+.animation__footer-band {
+    flex-shrink: 0;
+    margin-top: auto;
+    background: #faf3e6;
+    box-shadow: 0 -10px 28px rgb(50 35 25 / 10%);
 }
 
 .animation__stations {
     position: relative;
     z-index: 1;
     flex: 1 1 auto;
-    min-height: min(45vh, 420px);
-    padding: 0 48px 16px;
+    min-height: min(52vh, 520px);
+    padding: 8px clamp(16px, 3vw, 36px) 8px;
+    background-color: #fdf5e8;
+    background-image:
+        linear-gradient(rgb(0 0 0 / 4%) 1px, transparent 1px),
+        linear-gradient(90deg, rgb(0 0 0 / 4%) 1px, transparent 1px);
+    background-size: 22px 22px;
+    background-position: 0 0;
+}
+
+.animation__stations--dimmed::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    border-radius: 0;
+    background: rgb(20 12 8 / 42%);
+}
+
+.animation__stations--dimmed .week-stations-board {
+    filter: brightness(0.72) saturate(0.85);
 }
 
 .animation__fetch-hint {
+    position: relative;
+    z-index: 5;
     max-width: min(900px, 100%);
     margin: 0 auto 14px;
     padding: 10px 14px;
-    border-radius: 12px;
+    border-radius: 16px;
     font-size: 0.92rem;
     line-height: 1.45;
-    color: rgb(90 40 30);
-    background: rgb(255 220 200 / 55%);
-    box-shadow: inset 0 0 0 1px rgb(200 80 60 / 25%);
+    color: #4a3528;
+    background: rgb(255 235 210 / 90%);
+    box-shadow:
+        inset 0 0 0 1px rgb(210 140 90 / 28%),
+        0 4px 14px rgb(80 50 30 / 8%);
+}
+
+/* Табличка «на двери»: закрыто → при открытии переворот на «окна» и исчезновение */
+.animation__door-sign {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: min(11vh, 92px);
+    pointer-events: none;
+    animation: animation-door-sign-in 0.42s ease-out both;
+}
+
+.animation__door-sign--opening {
+    animation: none;
+}
+
+.animation__door-sign-chain {
+    width: 4px;
+    height: min(9vh, 52px);
+    border-radius: 2px;
+    background: repeating-linear-gradient(
+        180deg,
+        #5c4e46 0 6px,
+        #8a7568 6px 12px
+    );
+    box-shadow:
+        1px 2px 4px rgb(0 0 0 / 28%),
+        inset 1px 0 0 rgb(255 255 255 / 12%);
+}
+
+.animation__door-sign-pivot {
+    margin-top: 2px;
+    perspective: 720px;
+    perspective-origin: 50% 0%;
+}
+
+.animation__door-sign-card {
+    position: relative;
+    width: min(172px, 44vw);
+    height: 88px;
+    transform-style: preserve-3d;
+    transform-origin: 50% 0;
+}
+
+.animation__door-sign-face {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    backface-visibility: hidden;
+    box-shadow:
+        0 10px 28px rgb(0 0 0 / 32%),
+        inset 0 1px 0 rgb(255 255 255 / 22%);
+}
+
+.animation__door-sign-face--closed {
+    background: linear-gradient(158deg, #5a2218 0%, #3a140c 48%, #240c06 100%);
+    border: 3px solid #9a6a38;
+    color: #f8e8c0;
+    text-shadow: 0 1px 2px rgb(0 0 0 / 45%);
+}
+
+.animation__door-sign-label {
+    font-size: 1.05rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.animation__door-sign-sub {
+    font-size: 0.6rem;
+    font-weight: 600;
+    opacity: 0.85;
+    letter-spacing: 0.06em;
+    text-transform: lowercase;
+}
+
+.animation__door-sign-face--open {
+    transform: rotateY(180deg);
+    background: linear-gradient(185deg, #dff0ff 0%, #a8cceb 42%, #7aa8d8 100%);
+    border: 3px solid #f2f8ff;
+    color: #1a3558;
+    text-shadow: 0 1px 0 rgb(255 255 255 / 55%);
+}
+
+.animation__door-sign-open-title {
+    font-size: 0.88rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.animation__door-sign-windows {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 2px;
+}
+
+.animation__door-sign-window {
+    display: block;
+    width: 18px;
+    height: 14px;
+    border-radius: 3px;
+    background: linear-gradient(180deg, rgb(255 255 255 / 92%) 0%, rgb(210 230 255 / 88%) 100%);
+    box-shadow:
+        inset 0 0 0 2px #4a6a8a,
+        0 2px 4px rgb(30 50 80 / 18%);
+}
+
+.animation__door-sign--opening .animation__door-sign-card {
+    animation: animation-door-sign-reveal 1.2s cubic-bezier(0.45, 0, 0.55, 1) forwards;
+}
+
+@keyframes animation-door-sign-in {
+    from {
+        opacity: 0;
+        transform: translateY(-14px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes animation-door-sign-reveal {
+    0% {
+        transform: rotateY(0deg) translateY(0);
+        opacity: 1;
+    }
+
+    36% {
+        transform: rotateY(180deg) translateY(0);
+        opacity: 1;
+    }
+
+    58% {
+        transform: rotateY(180deg) translateY(0);
+        opacity: 1;
+    }
+
+    100% {
+        transform: rotateY(180deg) translateY(-132px) scale(0.84) rotateX(6deg);
+        opacity: 0;
+    }
 }

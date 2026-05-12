@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useState } from 'react';
 import type { AnimationScheduleItem } from '../../types/schedule';
 import WalkingPerson from '../WalkingPerson/WalkingPerson';
 import { staffingTone, type StaffingTone } from '../../utils/staffingTone';
@@ -8,31 +8,52 @@ type WeekStationsBoardProps = {
     items: AnimationScheduleItem[];
 };
 
-type StationSpot = {
-    leftPct: number;
-    topPct: number;
-    badgeDx?: number;
-    badgeDy?: number;
-    /** С какой стороны подходят к прилавку (по горизонтали в локальных px узла) */
-    walkFromSide?: 'left' | 'right';
+type ZoneDef = {
+    codes: string[];
+    label: string;
+    icon: string;
+    variant: 'kitchen' | 'fries' | 'drinks' | 'counter' | 'hall';
+    wide?: boolean;
+    shirt: string;
 };
 
-const STATION_LAYOUT: Record<string, StationSpot> = {
-    // Привязка к розовым прилавкам на фоне (проценты от сцены).
-    // K — сверху по центру; FF — правый верхний; BVR — верхний левый;
-    // C — нижний левый; TS — нижний правый.
-    K: { leftPct: 50, topPct: 30, badgeDx: 0, badgeDy: -26, walkFromSide: 'left' },
-    FF: { leftPct: 96, topPct: 30, badgeDx: -54, badgeDy: -20, walkFromSide: 'left' },
-    BVR: { leftPct: 5, topPct: 30, badgeDx: 2, badgeDy: -24, walkFromSide: 'left' },
-    C: { leftPct: 15, topPct: 93, badgeDx: 4, badgeDy: 6, walkFromSide: 'left' },
-    TS: { leftPct: 88, topPct: 95, badgeDx: -56, badgeDy: 6, walkFromSide: 'right' },
-};
+const ZONES: ZoneDef[] = [
+    { codes: ['K'], label: 'Кухня', icon: 'bi-fire', variant: 'kitchen', shirt: '#ff8f5c' },
+    { codes: ['FF'], label: 'Картофель', icon: 'bi-basket2-fill', variant: 'fries', shirt: '#ffd84d' },
+    { codes: ['BVR'], label: 'Напитки', icon: 'bi-droplet', variant: 'drinks', shirt: '#6eb8ff' },
+    { codes: ['C'], label: 'Прилавок', icon: 'bi-cash-stack', variant: 'counter', shirt: '#ff8fb8' },
+    { codes: ['TS'], label: 'Зал', icon: 'bi-people-fill', variant: 'hall', wide: true, shirt: '#7dde9f' },
+];
+
+/** Строка из API похожа на id сотрудника, а не на отображаемое имя */
+function isTechnicalStaffId(raw: string): boolean {
+    const s = raw.trim();
+    if (!s) return false;
+    if (/\d/.test(s)) return true;
+    if (/^[A-Za-z]{1,8}[-_/][A-Za-z0-9_-]+$/i.test(s)) return true;
+    if (/^[0-9a-f-]{32,36}$/i.test(s)) return true;
+    return false;
+}
+
+/** Только id над человечком; «имена» не показываем — подставляем код станции + номер */
+function staffIdLabel(raw: string | undefined, stationKey: string, index: number): { text: string; title?: string } {
+    const s = raw?.trim() ?? '';
+    if (!s) {
+        return { text: `${stationKey}-${index + 1}` };
+    }
+    if (isTechnicalStaffId(s)) {
+        return { text: s };
+    }
+    return {
+        text: `${stationKey}-${String(index + 1).padStart(2, '0')}`,
+        title: s,
+    };
+}
 
 function actualCount(item: AnimationScheduleItem): number {
     if (item.atStationCount !== undefined && Number.isFinite(item.atStationCount)) {
         return item.atStationCount;
     }
-
     return item.employeeIds.length;
 }
 
@@ -42,17 +63,16 @@ function toneLabel(tone: StaffingTone): string {
     return 'Критично';
 }
 
-function stationSpot(station: string, index: number): StationSpot {
-    const fixed = STATION_LAYOUT[station.trim().toUpperCase()];
-    if (fixed) {
-        return fixed;
-    }
+function findItemForZone(items: AnimationScheduleItem[], codes: string[]): AnimationScheduleItem | undefined {
+    const upper = codes.map((c) => c.toUpperCase());
+    return items.find((row) => upper.includes(row.station.trim().toUpperCase()));
+}
 
-    // fallback for unknown station names
-    return {
-        leftPct: 14 + (index % 5) * 18,
-        topPct: 24 + Math.floor(index / 5) * 16,
-    };
+function progressPercent(actual: number, expected: number): number {
+    if (expected <= 0) {
+        return actual > 0 ? 100 : 0;
+    }
+    return Math.min(100, Math.round((actual / expected) * 100));
 }
 
 function WeekStationsBoard({ items }: WeekStationsBoardProps) {
@@ -76,80 +96,89 @@ function WeekStationsBoard({ items }: WeekStationsBoardProps) {
 
     return (
         <div className="week-stations-board">
-            <div className="week-stations-board__scene">
-                {items.map((item, stationIdx) => {
-                    const actual = actualCount(item);
-                    const expected = Math.max(0, item.expectedPeopleCount);
-                    const tone = staffingTone(expected, actual, item.expectationIndicator);
-                    const peopleCount = item.employeeIds.length > 0 ? item.employeeIds.length : actual;
-                    const spot = stationSpot(item.station, stationIdx);
+            <div className="week-stations-board__grid">
+                {ZONES.map((zone) => {
+                    const item = findItemForZone(items, zone.codes);
+                    const actual = item ? actualCount(item) : 0;
+                    const expected = item ? Math.max(0, item.expectedPeopleCount) : 0;
+                    const tone = item ? staffingTone(expected, actual, item.expectationIndicator) : 'ok';
+                    const pct = item ? progressPercent(actual, expected) : 0;
+                    const ids = item?.employeeIds ?? [];
+                    const peopleCount = ids.length > 0 ? ids.length : actual;
+                    const walkCount = Math.min(Math.max(peopleCount, 0), 8);
+                    const arenaW = zone.wide ? 280 : 152;
+                    const shirt = zone.shirt;
+                    const stationKey = zone.codes[0]?.toUpperCase() ?? 'X';
 
                     return (
                         <article
-                            key={`${item.day}-${item.hour}-${item.station}`}
-                            className={`station-node station-node--${tone}`}
-                            style={
-                                {
-                                    left: `${spot.leftPct}%`,
-                                    top: `${spot.topPct}%`,
-                                    '--badge-dx': `${spot.badgeDx ?? -6}px`,
-                                    '--badge-dy': `${spot.badgeDy ?? -16}px`,
-                                } as CSSProperties
-                            }
+                            key={zone.variant}
+                            className={`zone-card zone-card--${zone.variant}${zone.wide ? ' zone-card--wide' : ''}`}
                         >
-                            <div className="station-node__counter" />
-                            <div className="station-node__title">{item.station}</div>
-
-                            <div className={`station-node__badge station-node__badge--${tone}`}>
-                                <span className="station-node__actual">{actual}</span>
-                                <span className="station-node__sep">/</span>
-                                <span className="station-node__expected">{expected}</span>
-                                <span className="station-node__unit"> чел</span>
-                                <span className="station-node__status">{toneLabel(tone)}</span>
+                            <div className="zone-card__head">
+                                <i className={`bi ${zone.icon} zone-card__head-icon`} aria-hidden />
+                                <h2 className="zone-card__title">{zone.label}</h2>
                             </div>
 
-                            {item.employeeIds.length > 0 ? (
-                                <div className="station-node__ids" title={item.employeeIds.join(', ')}>
-                                    {item.employeeIds.slice(0, 7).join(', ')}
-                                    {item.employeeIds.length > 7 ? '…' : ''}
-                                </div>
-                            ) : null}
-
-                            {peopleCount > 0 ? (
-                                <div
-                                    className={`station-node__walkers station-node__walkers--from-${spot.walkFromSide ?? 'left'}`}
-                                    aria-hidden="true"
-                                >
-                                    {Array.from({ length: Math.min(peopleCount, 24) }).map((_, idx) => {
-                                        const lane = idx % 2;
-                                        const col = Math.floor(idx / 2);
-                                        const targetX = 4 + col * 14;
-                                        const targetY = lane === 0 ? 20 : 38;
-                                        const offset = (idx * 240) % 1800;
-                                        const cycle = 5000;
+                            {walkCount > 0 ? (
+                                <div className={`zone-card__walk-layer${zone.wide ? ' zone-card__walk-layer--wide' : ''}`} aria-hidden>
+                                    {Array.from({ length: walkCount }).map((_, idx) => {
+                                        const cycle = 5200;
                                         const phase = sceneTimeMs % cycle;
-                                        const fromRight = spot.walkFromSide === 'right';
-                                        const base = 80 + col * 9;
-                                        const fromX = fromRight ? base : -base;
-                                        const exitX = fromRight ? base + 6 : -base - 6;
+                                        const offset = idx * 260;
+                                        const cols = Math.min(zone.wide ? 6 : 4, Math.max(1, walkCount));
+                                        const col = idx % cols;
+                                        const span = Math.max(1, cols - 1);
+                                        const targetX = 22 + (col / span) * (arenaW - 44);
+                                        const targetY = 80;
+                                        const lane = idx % 2;
+                                        const fromX = -52 - (idx % 3) * 10;
+                                        const fromY = 78 + lane * 6;
+                                        const exitX = arenaW + 44;
+                                        const exitY = 80 + lane * 5;
+                                        const idLabel = staffIdLabel(ids[idx], stationKey, idx);
                                         return (
                                             <WalkingPerson
-                                                key={`${item.day}-${item.hour}-${item.station}-p${idx}`}
+                                                key={`walk-${zone.variant}-${idLabel.text}-${idx}`}
+                                                label={idLabel.text}
+                                                labelTitle={idLabel.title}
+                                                shirtColor={shirt}
                                                 sceneTimeMs={phase}
-                                                arrivalTimeMs={900 + offset}
+                                                arrivalTimeMs={650 + offset}
                                                 departureTimeMs={3600 + offset}
-                                                walkDurationMs={800}
+                                                walkDurationMs={680}
                                                 targetX={targetX}
                                                 targetY={targetY}
                                                 fromX={fromX}
-                                                fromY={44 + lane * 6}
+                                                fromY={fromY}
                                                 exitX={exitX}
-                                                exitY={46 + lane * 6}
+                                                exitY={exitY}
                                             />
                                         );
                                     })}
                                 </div>
-                            ) : null}
+                            ) : (
+                                <div className="zone-card__walk-placeholder">
+                                    <span className="zone-card__vacant">Никого</span>
+                                </div>
+                            )}
+
+                            <div className="zone-card__meta">
+                                {item ? (
+                                    <>
+                                        <span className={`zone-card__tone zone-card__tone--${tone}`}>{toneLabel(tone)}</span>
+                                        <span className="zone-card__ratio">
+                                            {actual}/{expected} чел
+                                        </span>
+                                    </>
+                                ) : (
+                                    <span className="zone-card__vacant">Нет слота в данных</span>
+                                )}
+                            </div>
+
+                            <div className="zone-card__bar-wrap" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+                                <div className="zone-card__bar-fill" style={{ width: `${pct}%` }} />
+                            </div>
                         </article>
                     );
                 })}

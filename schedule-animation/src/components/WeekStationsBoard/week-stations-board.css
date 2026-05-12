@@ -1,187 +1,293 @@
 .week-stations-board {
-    width: min(1200px, 100%);
+    width: 100%;
+    max-width: 100%;
     margin: 0 auto;
+    padding: 0 clamp(8px, 1.5vw, 16px);
 }
 
 .week-stations-board--empty {
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 120px;
-    border-radius: 16px;
-    background: rgb(255 255 255 / 18%);
-    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 8%);
+    min-height: 200px;
+    border-radius: 22px;
+    background: rgb(255 252 245 / 85%);
+    box-shadow:
+        inset 0 0 0 1px rgb(200 170 140 / 22%),
+        0 6px 24px rgb(80 50 30 / 6%);
 }
 
 .week-stations-board__empty {
     margin: 0;
     font-size: 1.05rem;
-    color: rgb(50 40 35 / 75%);
+    color: #5c4334;
 }
 
-.week-stations-board__scene {
+.week-stations-board__grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-areas:
+        'kitchen fries drinks'
+        'counter hall hall';
+    column-gap: clamp(56px, 8.5vw, 128px);
+    row-gap: clamp(28px, 5.5vw, 56px);
+    padding: clamp(18px, 3vw, 40px) clamp(20px, 3.2vw, 48px) clamp(28px, 4vw, 48px);
+    align-items: start;
+    overflow: visible;
+}
+
+.zone-card {
     position: relative;
-    min-height: 420px;
-    border-radius: 14px;
-    background: rgb(255 255 255 / 10%);
-    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 20%);
-    overflow: hidden;
-}
-
-.station-node {
-    position: absolute;
-    transform: translate(-50%, -50%);
-    width: 110px;
-    min-height: 92px;
-    z-index: 2;
-}
-
-.station-node__counter {
-    position: absolute;
-    left: 22px;
-    top: 8px;
-    width: 66px;
-    height: 8px;
-    border-radius: 999px;
-    background: linear-gradient(180deg, #6f4d3f, #4e342b);
+    display: flex;
+    flex-direction: column;
+    min-height: 212px;
+    padding: 20px 22px 18px;
+    border-radius: 24px;
+    background: rgb(255 255 255 / 55%);
     box-shadow:
-        0 2px 6px rgb(0 0 0 / 28%),
-        inset 0 0 0 1px rgb(255 255 255 / 24%);
-    z-index: 5;
+        0 4px 14px rgb(60 40 30 / 8%),
+        inset 0 0 0 2px rgb(255 255 255 / 50%);
+    overflow: visible;
+    --drift-x: 0px;
+    --drift-y: 0px;
+    transform: translate(var(--drift-x), var(--drift-y));
+    transition: transform 0.28s ease;
 }
 
-.station-node__title {
-    position: absolute;
-    top: -2px;
-    left: -6px;
-    font-size: 0.66rem;
-    font-weight: 800;
-    letter-spacing: 0.06em;
-    color: #2a1810;
-    text-transform: uppercase;
-    z-index: 7;
+.zone-card:hover {
+    transform: translate(var(--drift-x), calc(var(--drift-y) - 5px));
 }
 
-.station-node__badge {
-    position: absolute;
-    right: 0;
-    top: 0;
-    transform: translate(var(--badge-dx, -6px), var(--badge-dy, -16px));
-    display: inline-flex;
+.zone-card--wide {
+    grid-column: span 2;
+}
+
+.zone-card--kitchen {
+    grid-area: kitchen;
+    border-color: #f4c4a8;
+    background: linear-gradient(165deg, #fff0e6 0%, #ffe8dc 100%);
+    box-shadow:
+        0 4px 14px rgb(200 120 80 / 12%),
+        inset 0 0 0 2px #f0b896;
+    --drift-x: -12px;
+    --drift-y: -22px;
+}
+
+.zone-card--fries {
+    grid-area: fries;
+    background: linear-gradient(165deg, #fff9e6 0%, #fff0c8 100%);
+    box-shadow:
+        0 4px 14px rgb(200 160 40 / 14%),
+        inset 0 0 0 2px #edd080;
+    --drift-x: 10px;
+    --drift-y: 28px;
+}
+
+.zone-card--drinks {
+    grid-area: drinks;
+    background: linear-gradient(165deg, #eef6ff 0%, #e4efff 100%);
+    box-shadow:
+        0 4px 14px rgb(80 120 200 / 12%),
+        inset 0 0 0 2px #b8d4f0;
+    --drift-x: 18px;
+    --drift-y: -8px;
+}
+
+.zone-card--counter {
+    grid-area: counter;
+    background: linear-gradient(165deg, #fff0f5 0%, #ffe4ef 100%);
+    box-shadow:
+        0 4px 14px rgb(200 100 140 / 12%),
+        inset 0 0 0 2px #f0b8d0;
+    --drift-x: -16px;
+    --drift-y: 20px;
+}
+
+.zone-card--hall {
+    grid-area: hall;
+    background: linear-gradient(165deg, #f0fff2 0%, #e4f8e8 100%);
+    box-shadow:
+        0 4px 14px rgb(80 160 100 / 14%),
+        inset 0 0 0 2px #b8e0c4;
+    --drift-x: 8px;
+    --drift-y: -14px;
+}
+
+.zone-card__head {
+    display: flex;
     align-items: center;
-    gap: 2px;
-    padding: 1px 6px;
-    border-radius: 999px;
-    font-size: 0.62rem;
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.zone-card__head-icon {
+    font-size: 1.15rem;
+    color: #4a3528;
+    opacity: 0.88;
+}
+
+.zone-card__title {
+    margin: 0;
+    font-size: 1rem;
     font-weight: 700;
-    line-height: 1.2;
-    white-space: nowrap;
-    z-index: 8;
-    box-shadow: 0 2px 5px rgb(0 0 0 / 20%);
+    color: #3d2e24;
+    letter-spacing: 0.02em;
 }
 
-.station-node__badge--ok {
-    background: rgb(34 160 80 / 22%);
-    color: rgb(12 90 40);
+.zone-card__walk-placeholder {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    margin: 4px 0 6px;
 }
 
-.station-node__badge--warn {
-    background: rgb(220 150 40 / 28%);
-    color: rgb(110 70 10);
-}
-
-.station-node__badge--bad {
-    background: rgb(220 60 50 / 24%);
-    color: rgb(120 20 20);
-}
-
-.station-node__actual {
-    color: #b41515;
-}
-
-.station-node__sep {
-    opacity: 0.6;
-}
-
-.station-node__unit {
-    opacity: 0.75;
-}
-
-.station-node__status {
-    margin-left: 4px;
-    opacity: 0.85;
-}
-
-.station-node__ids {
-    position: absolute;
-    right: -12px;
-    top: 8px;
-    font-size: 0.58rem;
-    line-height: 1.15;
-    max-width: 88px;
-    color: rgb(40 30 25 / 72%);
-    text-align: right;
-    z-index: 7;
-}
-
-.station-node__walkers {
-    position: absolute;
-    left: 0;
-    top: 20px;
+.zone-card__walk-layer {
+    position: relative;
+    flex: 1 1 auto;
     width: 100%;
-    height: 62px;
-    z-index: 3;
+    max-width: 156px;
+    height: 122px;
+    margin: 8px auto 12px;
     pointer-events: none;
 }
 
-.station-node::after {
-    content: '';
-    position: absolute;
-    left: -72px;
-    top: 52px;
-    width: 170px;
-    height: 10px;
+.zone-card__walk-layer--wide {
+    max-width: 100%;
+    height: 128px;
+}
+
+.zone-card__vacant {
+    font-size: 0.88rem;
+    color: #7a6558;
+    font-style: italic;
+}
+
+.zone-card__meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.75rem;
+    color: #5c4334;
+    margin-bottom: 8px;
+    margin-top: auto;
+}
+
+.zone-card__ratio {
+    font-weight: 700;
+    opacity: 1;
+}
+
+/* Цвет строки «факт/норма чел» — как светлый край полосы станции */
+.zone-card--kitchen .zone-card__ratio {
+    color: #e8a070;
+    text-shadow: 0 0 14px rgb(232 160 112 / 32%);
+}
+
+.zone-card--fries .zone-card__ratio {
+    color: #f0d060;
+    text-shadow: 0 0 14px rgb(240 208 96 / 35%);
+}
+
+.zone-card--drinks .zone-card__ratio {
+    color: #88c0f0;
+    text-shadow: 0 0 14px rgb(136 192 240 / 32%);
+}
+
+.zone-card--counter .zone-card__ratio {
+    color: #f0a0c8;
+    text-shadow: 0 0 14px rgb(240 160 200 / 30%);
+}
+
+.zone-card--hall .zone-card__ratio {
+    color: #a0e0b0;
+    text-shadow: 0 0 14px rgb(160 224 176 / 32%);
+}
+
+.zone-card__tone {
+    font-weight: 700;
+    padding: 2px 8px;
     border-radius: 999px;
-    background: linear-gradient(90deg, rgb(120 90 72 / 24%), rgb(120 90 72 / 8%));
-    z-index: 1;
+    font-size: 0.68rem;
 }
 
-.station-node--ok .station-node__counter {
-    box-shadow:
-        0 2px 6px rgb(0 0 0 / 28%),
-        inset 0 0 0 1px rgb(255 255 255 / 24%),
-        0 0 0 2px rgb(34 160 80 / 28%);
+.zone-card__tone--ok {
+    background: rgb(80 160 100 / 18%);
+    color: #1d5c30;
 }
 
-.station-node--warn .station-node__counter {
-    box-shadow:
-        0 2px 6px rgb(0 0 0 / 28%),
-        inset 0 0 0 1px rgb(255 255 255 / 24%),
-        0 0 0 2px rgb(220 150 40 / 30%);
+.zone-card__tone--warn {
+    background: rgb(220 170 60 / 28%);
+    color: #6a4810;
 }
 
-.station-node--bad .station-node__counter {
-    box-shadow:
-        0 2px 6px rgb(0 0 0 / 28%),
-        inset 0 0 0 1px rgb(255 255 255 / 24%),
-        0 0 0 2px rgb(220 60 50 / 30%);
+.zone-card__tone--bad {
+    background: rgb(220 80 70 / 22%);
+    color: #7a1810;
 }
 
-@media (max-width: 960px) {
-    .week-stations-board__scene {
-        min-height: 360px;
+.zone-card__bar-wrap {
+    height: 8px;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 8%);
+    overflow: hidden;
+}
+
+.zone-card--kitchen .zone-card__bar-fill {
+    background: linear-gradient(90deg, #e8a070, #d9732b);
+}
+
+.zone-card--fries .zone-card__bar-fill {
+    background: linear-gradient(90deg, #f0d060, #e8b020);
+}
+
+.zone-card--drinks .zone-card__bar-fill {
+    background: linear-gradient(90deg, #88c0f0, #5090d8);
+}
+
+.zone-card--counter .zone-card__bar-fill {
+    background: linear-gradient(90deg, #f0a0c8, #e070a0);
+}
+
+.zone-card--hall .zone-card__bar-fill {
+    background: linear-gradient(90deg, #a0e0b0, #58c078);
+}
+
+.zone-card__bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (max-width: 720px) {
+    .week-stations-board__grid {
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+            'kitchen kitchen'
+            'fries drinks'
+            'counter counter'
+            'hall hall';
+        column-gap: clamp(40px, 5.5vw, 56px);
+        row-gap: clamp(22px, 4.5vw, 38px);
+        padding: clamp(14px, 3vw, 24px) clamp(8px, 2vw, 16px);
     }
 
-    .station-node {
-        width: 96px;
+    .zone-card--kitchen {
+        grid-column: span 2;
     }
 
-    .station-node__badge {
-        right: -6px;
+    .zone-card--wide {
+        grid-column: span 2;
     }
 
-    .station-node__ids {
-        max-width: 72px;
+    .zone-card--kitchen,
+    .zone-card--fries,
+    .zone-card--drinks,
+    .zone-card--counter,
+    .zone-card--hall {
+        --drift-x: 0px;
+        --drift-y: 0px;
     }
 }

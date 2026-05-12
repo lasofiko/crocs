@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import type { CSSProperties } from 'react';
 import './walking-person.css';
 
 export type WalkingPersonProps = {
@@ -20,6 +21,12 @@ export type WalkingPersonProps = {
     /** Длительность подхода и ухода, мс */
     walkDurationMs?: number;
     className?: string;
+    /** Подпись над головой (id для экрана) */
+    label?: string;
+    /** Подсказка при подстановке id вместо «имени» из API */
+    labelTitle?: string;
+    /** Цвет «футболки» пастельный */
+    shirtColor?: string;
 };
 
 function lerp(a: number, b: number, t: number): number {
@@ -28,6 +35,18 @@ function lerp(a: number, b: number, t: number): number {
 
 function clamp01(value: number): number {
     return Math.min(1, Math.max(0, value));
+}
+
+/** Лёгкая задержка «танца», чтобы сотрудники на смене не двигались синхронно. */
+function danceDelayFromLabel(label: string | undefined): number {
+    if (!label) {
+        return 0;
+    }
+    let h = 0;
+    for (let i = 0; i < label.length; i += 1) {
+        h = (h + label.charCodeAt(i) * (i + 1)) % 997;
+    }
+    return (h % 20) * 0.035;
 }
 
 export function WalkingPerson({
@@ -42,6 +61,9 @@ export function WalkingPerson({
     exitY: exitYProp,
     walkDurationMs = 2000,
     className = '',
+    label,
+    labelTitle,
+    shirtColor = '#8ec5f0',
 }: WalkingPersonProps) {
     const fromX = fromXProp ?? targetX - 80;
     const fromY = fromYProp ?? targetY;
@@ -101,9 +123,20 @@ export function WalkingPerson({
         return null;
     }
 
-    const rootClass = ['walking-person', state.walking ? 'walking-person--walking' : '', className]
+    const rootClass = [
+        'walking-person',
+        state.walking ? 'walking-person--walking' : 'walking-person--idle',
+        className,
+    ]
         .filter(Boolean)
         .join(' ');
+
+    const danceDelay = danceDelayFromLabel(label);
+
+    const styleVars = {
+        '--walk-shirt': shirtColor,
+        '--dance-delay': `${danceDelay}s`,
+    } as CSSProperties;
 
     return (
         <div
@@ -111,10 +144,27 @@ export function WalkingPerson({
             style={{
                 left: state.x,
                 top: state.y,
+                ...styleVars,
             }}
         >
             <div className="walking-person__figure">
-                <div className="walking-person__head" />
+                {label ? (
+                    <span className="walking-person__id" title={labelTitle ?? label}>
+                        {label}
+                    </span>
+                ) : null}
+                <div className="walking-person__head">
+                    <span className="walking-person__hair" aria-hidden />
+                    <span className="walking-person__blush walking-person__blush--l" aria-hidden />
+                    <span className="walking-person__blush walking-person__blush--r" aria-hidden />
+                    <span className="walking-person__eye walking-person__eye--l" aria-hidden>
+                        <span className="walking-person__eye-shine" aria-hidden />
+                    </span>
+                    <span className="walking-person__eye walking-person__eye--r" aria-hidden>
+                        <span className="walking-person__eye-shine" aria-hidden />
+                    </span>
+                    <span className="walking-person__smile" aria-hidden />
+                </div>
                 <div className="walking-person__torso">
                     <span className="walking-person__arm walking-person__arm--left" />
                     <div className="walking-person__body" />
