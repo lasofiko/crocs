@@ -31,19 +31,49 @@ def load_raw_bundle(data_dir: Path) -> RawDataBundle:
         weather=weather,
         reqlabor=_load_table(data_dir, "reqlabor"),
         sched=_load_table(data_dir, "sched"),
+        staff_limits=_load_table(data_dir, "staff_limits"),
         station_priorities=_load_table(data_dir, "station_priorities"),
         shifts=_load_table(data_dir, "shifts"),
-        staff_limits=_load_table(data_dir, "staff_limits"),
     )
 
 
 def require_bundle(bundle: RawDataBundle) -> None:
-    """Минимум для ML-прогноза гостей."""
+    """Все таблицы для полного пайплайна (прогноз + спрос + расписание CP-SAT)."""
+    missing: list[str] = []
     if bundle.train is None:
-        raise DataValidationError("Нет входной таблицы: train.csv/.xlsx")
+        missing.append("train")
+    if bundle.reqlabor is None:
+        missing.append("reqlabor")
+    if bundle.sched is None:
+        missing.append("sched")
+    if bundle.station_priorities is None:
+        missing.append("station_priorities")
+    if bundle.shifts is None:
+        missing.append("shifts")
+    if bundle.staff_limits is None:
+        missing.append("staff_limits")
+
+    if missing:
+        raise DataValidationError(
+            "Нет входных таблиц: " + ", ".join(f"{x}.csv/.xlsx" for x in missing),
+        )
 
 
 def require_ml_forecast_tables(bundle: RawDataBundle) -> None:
     """Для CatBoost-прогноза нужен train (погода опционально в bundle)."""
     if bundle.train is None:
         raise DataValidationError("Нет train.csv/.xlsx в raw_data_dir для ML-прогноза.")
+
+
+def require_schedule_tables(bundle: RawDataBundle) -> None:
+    """Таблицы для построения расписания (CP-SAT)."""
+    if bundle.reqlabor is None:
+        raise DataValidationError("Нет reqlabor.csv/.xlsx в raw_data_dir для расписания.")
+    if bundle.sched is None:
+        raise DataValidationError("Нет sched.csv/.xlsx в raw_data_dir для расписания.")
+    if bundle.staff_limits is None:
+        raise DataValidationError("Нет staff_limits.csv/.xlsx в raw_data_dir для расписания.")
+    if bundle.station_priorities is None:
+        raise DataValidationError("Нет station_priorities.csv/.xlsx для расписания.")
+    if bundle.shifts is None:
+        raise DataValidationError("Нет shifts.csv/.xlsx для расписания.")

@@ -4,11 +4,11 @@ from datetime import date
 from pathlib import Path
 from typing import Literal
 
-GuestsSource = Literal["model", "file"]
-
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+GuestsSource = Literal["model", "file"]
 
 FORECAST_START = date(2026, 4, 27)
 FORECAST_END = date(2026, 5, 3)
@@ -23,17 +23,23 @@ class ProjectConfig(BaseModel):
 class PathConfig(BaseModel):
     raw_data_dir: Path = Path("data/raw")
     output_dir: Path = Path("data/output")
-    # Готовый forecast.xlsx при guests_source=file (часто совпадает с output_dir).
     forecast_input_dir: Path = Path("data/output")
 
 
 class InputConfig(BaseModel):
     train: str = "train.csv"
     reqlabor: str = "reqlabor.csv"
+    sched: str = "sched.csv"
+    staff_limits: str = "staff_limits.csv"
+    station_priorities: str = "station_priorities.csv"
+    shifts: str = "shifts.csv"
 
 
 class OutputConfig(BaseModel):
     forecast: str = "forecast.xlsx"
+    schedule: str = "schedule.xlsx"
+    labor_demand: str = "labor_demand.xlsx"
+    coverage_report: str = "coverage_report.xlsx"
 
 
 class ForecastConfig(BaseModel):
@@ -50,6 +56,100 @@ class ForecastConfig(BaseModel):
     )
 
 
+class SchedulingConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = Field(
+        default=True,
+        description="Если false — только прогноз гостей и артефакты forecast (без расписания CP-SAT).",
+    )
+    solver_time_limit_seconds: int | None = None
+    cp_sat_stop_after_first_solution: bool = Field(
+        default=False,
+        description=(
+            "Если true — CP-SAT останавливается на первом допустимом решении (обычно намного быстрее); "
+            "качество по целевой функции (приоритет смен и станций) может быть хуже, чем при полном поиске."
+        ),
+    )
+    max_extra_coverage: int = Field(default=2, ge=0)
+    min_employees_per_station: int = Field(
+        default=1,
+        ge=0,
+        description=(
+            "Нижняя граница числа людей на станции в каждом слоте (день, час, station_key) "
+            "на горизонте расписания; 0 — без принудительного минимума."
+        ),
+    )
+    min_employees_relaxed_sale_hours: list[int] = Field(
+        default_factory=list,
+        description=(
+            "Список sale_hour (0-23), где на станции достаточно минимум одного человека, "
+            "даже если min_employees_per_station > 1."
+        ),
+    )
+    max_shifts_per_employee_week: int = Field(default=5, ge=1, le=7)
+    require_one_shift_per_sched_employee: bool = Field(
+        default=True,
+        description=(
+            "Если true: для каждого человека из sched.csv минимум одна смена за горизонт недели."
+        ),
+    )
+    lns_enabled: bool = Field(
+        default=True,
+        description="Large Neighborhood Search после первого feasible-решения CP-SAT.",
+    )
+    lns_iterations: int = Field(default=14, ge=1, le=500)
+    lns_repair_seconds: float | None = Field(
+        default=None,
+        description="Лимит времени на одну подзадачу LNS; null — авто от solver_time_limit.",
+    )
+    lns_destroy_days_min: int = Field(default=1, ge=1, le=7)
+    lns_destroy_days_max: int = Field(default=2, ge=1, le=7)
+    lns_staff_destroy_fraction: float = Field(
+        default=0.1,
+        ge=0.0,
+        le=0.5,
+        description="Доля ростера для оператора «разрушить смены выбранных сотрудников»; 0 — только по дням.",
+    )
+    lns_seed: int | None = Field(
+        default=None,
+        description="Фиксированный seed для LNS; null — недетерминированно.",
+    )
+    schedule_cache_from_db: bool = Field(
+        default=True,
+        description=(
+            "Если true и задан schedule_db_path: сначала искать последний прогон с тем же полным cache_key; "
+            "если нет — с тем же inputs_fingerprint (прогноз, сырьё, спрос и структурные ограничения без лимитов солвера/LNS), "
+            "чтобы переиспользовать расписание при смене сценария оптимизации."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _lns_day_bounds(self) -> SchedulingConfig:
+        if self.lns_destroy_days_min > self.lns_destroy_days_max:
+            raise ValueError("lns_destroy_days_min must be <= lns_destroy_days_max")
+        return self
+
+    @field_validator("min_employees_relaxed_sale_hours", mode="after")
+    @classmethod
+    def _normalize_relaxed_sale_hours(cls, v: list[int]) -> list[int]:
+        seen: set[int] = set()
+        out: list[int] = []
+        for x in v:
+            h = int(x)
+            if 0 <= h <= 23 and h not in seen:
+                seen.add(h)
+                out.append(h)
+        return sorted(out)
+
+
+class RuntimeConfig(BaseModel):
+    schedule_db_path: Path | None = Field(
+        default=Path("artifacts/schedule_runs.db"),
+        description="SQLite: сохранение расписания и метаданных прогона; null — не писать в БД.",
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="CROCS_",
@@ -62,6 +162,8 @@ class Settings(BaseSettings):
     inputs: InputConfig = Field(default_factory=InputConfig)
     outputs: OutputConfig = Field(default_factory=OutputConfig)
     forecast: ForecastConfig = Field(default_factory=ForecastConfig)
+    scheduling: SchedulingConfig = Field(default_factory=SchedulingConfig)
+    runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
 
 
 def load_settings(config_path: Path = Path("configs/default.yaml")) -> Settings:

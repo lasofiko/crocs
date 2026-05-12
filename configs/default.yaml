@@ -9,9 +9,16 @@ paths:
 inputs:
   train: train.csv
   reqlabor: reqlabor.csv
+  sched: sched.csv
+  staff_limits: staff_limits.csv
+  station_priorities: station_priorities.csv
+  shifts: shifts.csv
 
 outputs:
   forecast: forecast.xlsx
+  schedule: schedule.xlsx
+  labor_demand: labor_demand.xlsx
+  coverage_report: coverage_report.xlsx
 
 forecast:
   start: 2026-04-27
@@ -19,3 +26,24 @@ forecast:
   open_hour: 7
   close_hour: 23
   guests_source: file
+
+scheduling:
+  enabled: true
+  solver_time_limit_seconds: 1800
+  cp_sat_stop_after_first_solution: true
+  max_extra_coverage: 2
+  min_employees_per_station: 1
+  min_employees_relaxed_sale_hours: [23]
+  max_shifts_per_employee_week: 5
+  require_one_shift_per_sched_employee: true
+  lns_enabled: true
+  lns_iterations: 14
+  lns_repair_seconds: null
+  lns_destroy_days_min: 1
+  lns_destroy_days_max: 2
+  lns_staff_destroy_fraction: 0.1
+  lns_seed: null
+  schedule_cache_from_db: true
+
+runtime:
+  schedule_db_path: artifacts/schedule_runs.db

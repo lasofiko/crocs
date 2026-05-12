@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from crocs.domain.models import FORECAST_COLUMNS
+from crocs.domain.models import (
+    COVERAGE_REPORT_COLUMNS,
+    FORECAST_COLUMNS,
+    LABOR_DEMAND_COLUMNS,
+    SCHEDULE_COLUMNS,
+)
 from crocs.exceptions import DataValidationError
 
 
@@ -19,6 +24,18 @@ def _write_xlsx(df: pd.DataFrame, path: Path, columns: tuple[str, ...], label: s
 
 def write_forecast_xlsx(df: pd.DataFrame, path: Path) -> None:
     _write_xlsx(df, path, FORECAST_COLUMNS, "forecast")
+
+
+def write_labor_demand_xlsx(df: pd.DataFrame, path: Path) -> None:
+    _write_xlsx(df, path, LABOR_DEMAND_COLUMNS, "labor_demand")
+
+
+def write_schedule_xlsx(df: pd.DataFrame, path: Path) -> None:
+    _write_xlsx(df, path, SCHEDULE_COLUMNS, "schedule")
+
+
+def write_coverage_report_xlsx(df: pd.DataFrame, path: Path) -> None:
+    _write_xlsx(df, path, COVERAGE_REPORT_COLUMNS, "coverage_report")
 
 
 def load_forecast_guests_xlsx(

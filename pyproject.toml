@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "crocs"
 version = "0.1.0"
-description = "Guest forecasting (ML) for restaurants."
+description = "Guest forecasting (ML) and restaurant staff scheduling (OR-Tools CP-SAT)."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -17,7 +17,9 @@ dependencies = [
     "numpy>=2.1.0",
     "openpyxl>=3.1.0",
     "optuna>=4.0.0",
+    "ortools>=9.11.0",
     "pandas>=2.2.0",
+    "python-dateutil>=2.9.0",
     "pydantic>=2.9.0",
     "pydantic-settings>=2.5.0",
     "pyyaml>=6.0.0",
@@ -41,6 +43,8 @@ crocs-api = "crocs.api.app:run"
 crocs-api-main = "crocs.api.main:run_server"
 
 [project.optional-dependencies]
+redis = ["redis>=5.0.0"]
+pulp = ["pulp>=2.8.0"]
 dev = [
     "pyright>=1.1.380",
     "pytest>=8.3.0",
@@ -64,6 +68,9 @@ src = ["src", "tests", "scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/crocs/services/staffing_dashboard.py" = ["RUF001", "RUF002", "E501", "RUF005"]
 
 [tool.pyright]
 pythonVersion = "3.12"

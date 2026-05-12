@@ -20,6 +20,12 @@ def test_default_settings():
     assert settings.paths.raw_data_dir.as_posix() == "data/raw"
     assert settings.paths.forecast_input_dir.as_posix() == "data/output"
     assert settings.outputs.forecast == "forecast.xlsx"
+    assert settings.outputs.schedule == "schedule.xlsx"
+    assert settings.outputs.labor_demand == "labor_demand.xlsx"
+    assert settings.outputs.coverage_report == "coverage_report.xlsx"
+    assert settings.scheduling.enabled is True
+    assert settings.scheduling.lns_enabled is True
+    assert settings.scheduling.min_employees_per_station == 1
 
 
 def test_russian_holiday_features_for_may_2026():

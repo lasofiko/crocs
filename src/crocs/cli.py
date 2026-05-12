@@ -2,17 +2,16 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 
-from crocs.exceptions import DataValidationError
+from crocs.exceptions import DataValidationError, ScheduleError
 from crocs.io.csv_repository import _load_table
 from crocs.services.pipeline_service import check_raw_present, run_pipeline
 
 
 def _configure_console_output() -> None:
     """Windows console safety: never fail on unsupported codepage chars."""
-    import sys
-
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             try:
@@ -87,7 +86,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--check-only", action="store_true")
     p.add_argument("--convert-xlsx-to-csv", action="store_true")
-    args = p.parse_args(argv)
+    cli_argv = list(sys.argv[1:] if argv is None else argv)
+    if cli_argv and cli_argv[0] == "run":
+        cli_argv = cli_argv[1:]
+    args = p.parse_args(cli_argv)
 
     if args.convert_xlsx_to_csv:
         n = _convert_xlsx_to_csv(args.data_dir)
@@ -119,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
             forecast_input_dir=args.forecast_input_dir,
             guests_source=args.guests_source,
         )
-    except DataValidationError as exc:
+    except (DataValidationError, ScheduleError) as exc:
         print(f"Ошибка входных данных: {exc}", flush=True)
         return 1
     except Exception as exc:
