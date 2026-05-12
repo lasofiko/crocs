@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import type { AnimationScheduleItem } from '../../types/schedule';
+import { FriesIconBlack } from '../FriesIconBlack/FriesIconBlack';
 import WalkingPerson from '../WalkingPerson/WalkingPerson';
 import { staffingTone, type StaffingTone } from '../../utils/staffingTone';
 import './week-stations-board.css';
 
 type WeekStationsBoardProps = {
     items: AnimationScheduleItem[];
+    /** Предыдущий час (тот же день или прошлый слайд) — чтобы не «уходили» те, кто остаётся на станции */
+    previousItems?: AnimationScheduleItem[];
 };
 
 type ZoneDef = {
@@ -75,7 +78,7 @@ function progressPercent(actual: number, expected: number): number {
     return Math.min(100, Math.round((actual / expected) * 100));
 }
 
-function WeekStationsBoard({ items }: WeekStationsBoardProps) {
+function WeekStationsBoard({ items, previousItems = [] }: WeekStationsBoardProps) {
     const [sceneTimeMs, setSceneTimeMs] = useState(0);
 
     useEffect(() => {
@@ -99,6 +102,9 @@ function WeekStationsBoard({ items }: WeekStationsBoardProps) {
             <div className="week-stations-board__grid">
                 {ZONES.map((zone) => {
                     const item = findItemForZone(items, zone.codes);
+                    const prevItem = findItemForZone(previousItems, zone.codes);
+                    const prevSet = new Set(prevItem?.employeeIds ?? []);
+
                     const actual = item ? actualCount(item) : 0;
                     const expected = item ? Math.max(0, item.expectedPeopleCount) : 0;
                     const tone = item ? staffingTone(expected, actual, item.expectationIndicator) : 'ok';
@@ -116,7 +122,11 @@ function WeekStationsBoard({ items }: WeekStationsBoardProps) {
                             className={`zone-card zone-card--${zone.variant}${zone.wide ? ' zone-card--wide' : ''}`}
                         >
                             <div className="zone-card__head">
-                                <i className={`bi ${zone.icon} zone-card__head-icon`} aria-hidden />
+                                {zone.variant === 'fries' ? (
+                                    <FriesIconBlack className="zone-card__head-icon zone-card__head-icon--svg" />
+                                ) : (
+                                    <i className={`bi ${zone.icon} zone-card__head-icon`} aria-hidden />
+                                )}
                                 <h2 className="zone-card__title">{zone.label}</h2>
                             </div>
 
@@ -136,10 +146,12 @@ function WeekStationsBoard({ items }: WeekStationsBoardProps) {
                                         const fromY = 78 + lane * 6;
                                         const exitX = arenaW + 44;
                                         const exitY = 80 + lane * 5;
-                                        const idLabel = staffIdLabel(ids[idx], stationKey, idx);
+                                        const rawId = ids[idx];
+                                        const staying = Boolean(rawId && prevSet.has(rawId));
+                                        const idLabel = staffIdLabel(rawId, stationKey, idx);
                                         return (
                                             <WalkingPerson
-                                                key={`walk-${zone.variant}-${idLabel.text}-${idx}`}
+                                                key={`walk-${zone.variant}-${rawId ?? idLabel.text}-${idx}`}
                                                 label={idLabel.text}
                                                 labelTitle={idLabel.title}
                                                 shirtColor={shirt}
@@ -153,6 +165,7 @@ function WeekStationsBoard({ items }: WeekStationsBoardProps) {
                                                 fromY={fromY}
                                                 exitX={exitX}
                                                 exitY={exitY}
+                                                persistOnStation={staying}
                                             />
                                         );
                                     })}

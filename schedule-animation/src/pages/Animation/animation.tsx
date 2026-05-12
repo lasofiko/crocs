@@ -293,7 +293,10 @@ function Animation() {
                         </div>
                     </div>
                 ) : null}
-                <WeekStationsBoard items={currentSlide.items} />
+                <WeekStationsBoard
+                    items={currentSlide.items}
+                    previousItems={currentIndex > 0 ? (slides[currentIndex - 1]?.items ?? []) : []}
+                />
             </section>
 
             <div className="animation__footer-band">
